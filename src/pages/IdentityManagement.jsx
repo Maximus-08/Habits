@@ -17,6 +17,7 @@ export default function IdentityManagement() {
 
   // Local identity state
   const [localIdentity, setLocalIdentity] = useState(identity);
+  const [selectedIdentity, setSelectedIdentity] = useState(identity);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Bad habits state
@@ -60,6 +61,21 @@ export default function IdentityManagement() {
   useEffect(() => {
     setHasUnsavedChanges(localIdentity !== identity);
   }, [localIdentity, identity]);
+
+  useEffect(() => {
+    if (!selectedIdentity) {
+      setSelectedIdentity(identity);
+    }
+  }, [identity, selectedIdentity]);
+
+  const identities = useMemo(() => {
+    const set = new Set();
+    if (identity) set.add(identity);
+    habits.forEach(h => { if (h.identityName) set.add(h.identityName); });
+    badHabits.forEach(h => { if (h.identityName) set.add(h.identityName); });
+    return Array.from(set);
+  }, [identity, habits, badHabits]);
+
 
   // Load bad habits
   const loadBadHabits = async () => {
@@ -130,11 +146,11 @@ export default function IdentityManagement() {
     setLoading(true);
     const { id, success, error } = await firestoreService.saveBadHabit(user.uid, {
       name: newBadHabitName.trim(),
-      identityName: identity,
+      identityName: selectedIdentity || identity,
       lapses: []
     });
     if (success) {
-      const newHabitObj = { id, name: newBadHabitName.trim(), identityName: identity, lapses: [], createdAt: new Date() };
+      const newHabitObj = { id, name: newBadHabitName.trim(), identityName: selectedIdentity || identity, lapses: [], createdAt: new Date() };
       setBadHabits(prev => [...prev, newHabitObj]);
       setSelectedBadHabit(newHabitObj);
       setNewBadHabitName('');
@@ -159,6 +175,39 @@ export default function IdentityManagement() {
     setLoading(false);
   };
 
+
+  const handleUpdateBadHabit = async () => {
+    if (!user || !selectedBadHabit || !selectedBadHabit.name?.trim()) return;
+    setLoading(true);
+    const { success, error } = await firestoreService.updateBadHabit(user.uid, selectedBadHabit.id, {
+      name: selectedBadHabit.name.trim(),
+      identityName: selectedBadHabit.identityName || selectedIdentity || identity
+    });
+    if (success) {
+      toast.success('Bad habit updated');
+      await loadBadHabits();
+    } else {
+      toast.error(error || 'Failed to update bad habit');
+    }
+    setLoading(false);
+  };
+
+  const handleDeleteBadHabit = async () => {
+    if (!user || !selectedBadHabit) return;
+    if (!window.confirm('Delete this bad habit? This action cannot be undone.')) return;
+    setLoading(true);
+    const { success, error } = await firestoreService.deleteBadHabit(user.uid, selectedBadHabit.id);
+    if (success) {
+      toast.success('Bad habit deleted');
+      const remaining = badHabits.filter(h => h.id !== selectedBadHabit.id);
+      setBadHabits(remaining);
+      setSelectedBadHabit(remaining[0] || null);
+    } else {
+      toast.error(error || 'Failed to delete bad habit');
+    }
+    setLoading(false);
+  };
+
   const handleSaveIdentity = async () => {
     if (!localIdentity.trim()) {
       toast.error('Identity cannot be empty');
@@ -172,6 +221,7 @@ export default function IdentityManagement() {
 
   // Habit form handlers (moved from Dashboard)
   const handleEditHabit = (habit) => {
+    setSelectedIdentity(habit.identityName || identity);
     setEditingHabit(habit);
     setNewHabit({
       title: habit.title,
@@ -202,7 +252,7 @@ export default function IdentityManagement() {
       stackedHabit: sanitizeInput(newHabit.stackedHabit),
       twoMinRule: sanitizeInput(newHabit.twoMinRule),
       targetSteps: parseInt(newHabit.targetSteps) || 1,
-      identityName: identity,
+      identityName: selectedIdentity || identity,
     };
     addHabit(sanitizedHabit);
     resetForm();
@@ -235,7 +285,7 @@ export default function IdentityManagement() {
     setShowAddHabit(false);
   };
 
-  const evidence = habits.map(habit => ({
+  const evidence = habits.filter(h => (h.identityName || identity) === (selectedIdentity || identity)).map(habit => ({
     id: habit.id,
     task: habit.title,
     schedule: `${habit.category} • ${habit.time}`,
@@ -301,6 +351,19 @@ export default function IdentityManagement() {
                       onChange={(e) => setLocalIdentity(e.target.value)}
                     />
                   </div>
+                </label>
+
+                <label className="flex flex-col gap-2">
+                  <span className="text-xs font-bold text-text-muted uppercase tracking-wider">Manage Habits For Identity</span>
+                  <select
+                    className="w-full bg-white border border-slate-200 text-slate-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none"
+                    value={selectedIdentity || identity}
+                    onChange={(e) => setSelectedIdentity(e.target.value)}
+                  >
+                    {identities.map((identityName) => (
+                      <option key={identityName} value={identityName}>{identityName}</option>
+                    ))}
+                  </select>
                 </label>
 
                 {/* Evidence / Good Habits */}
@@ -502,7 +565,7 @@ export default function IdentityManagement() {
                             {badHabits.length === 0 && (
                               <option value="">No bad habits tracked</option>
                             )}
-                            {badHabits.map(habit => (
+                            {badHabits.filter(h => (h.identityName || identity) === (selectedIdentity || identity)).map(habit => (
                               <option key={habit.id} value={habit.id}>{habit.name}</option>
                             ))}
                           </select>
@@ -531,13 +594,28 @@ export default function IdentityManagement() {
                     </div>
 
                     <div className="flex-1 flex flex-col gap-4">
+                      <input
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800"
+                        value={selectedBadHabit.name || ''}
+                        onChange={(e) => setSelectedBadHabit(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="Bad habit name"
+                      />
+                      <select
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700"
+                        value={selectedBadHabit.identityName || selectedIdentity || identity}
+                        onChange={(e) => setSelectedBadHabit(prev => ({ ...prev, identityName: e.target.value }))}
+                      >
+                        {identities.map((identityName) => (
+                          <option key={identityName} value={identityName}>{identityName}</option>
+                        ))}
+                      </select>
                       <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex justify-between items-center">
                         <span className="text-xs font-bold text-slate-500 uppercase">Total Relapses</span>
                         <span className="text-slate-800 font-bold text-sm">{selectedBadHabit.lapses?.length || 0}</span>
                       </div>
-                      <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex justify-between items-center">
-                        <span className="text-xs font-bold text-emerald-700 uppercase">Status</span>
-                        <span className="text-emerald-700 font-bold text-sm">{daysFree >= 7 ? 'Strong 💪' : 'Keep Going'}</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button onClick={handleUpdateBadHabit} disabled={loading} className="py-2 bg-slate-900 text-white rounded-lg text-xs font-bold uppercase tracking-wider disabled:opacity-50">Save</button>
+                        <button onClick={handleDeleteBadHabit} disabled={loading} className="py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-bold uppercase tracking-wider disabled:opacity-50">Delete</button>
                       </div>
                       <button
                         onClick={handleLogRelapse}

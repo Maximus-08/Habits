@@ -16,6 +16,7 @@ export default function Heatmap({ data }) {
                     width="100%"
                     style={{ color: '#a1a1aa' }}
                     startDate={new Date(new Date().setMonth(new Date().getMonth() - 6))}
+                    endDate={new Date()}
                     rectSize={14}
                     space={4}
                     legendCellSize={0}
