@@ -494,6 +494,29 @@ export const logBadHabitLapse = async (userId, badHabitId) => {
   }
 };
 
+export const updateBadHabit = async (userId, badHabitId, updates) => {
+  try {
+    await updateDoc(doc(db, 'users', userId, 'badHabits', badHabitId), {
+      ...updates,
+      updatedAt: Timestamp.now()
+    });
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error updating bad habit:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const deleteBadHabit = async (userId, badHabitId) => {
+  try {
+    await deleteDoc(doc(db, 'users', userId, 'badHabits', badHabitId));
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error deleting bad habit:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 // Environment Strategy Operations
 export const saveEnvironmentStrategy = async (userId, identityName, strategyData) => {
   try {

@@ -31,16 +31,20 @@ function getIdentityColor(index) {
 export default function EnvironmentDesign() {
     const { user } = useAuth()
     const { habits, identity } = useUser()
+    const [badHabits, setBadHabits] = useState([])
 
-    // Build identities from habits + current identity
+    // Build identities from habits + bad habits + current identity
     const identities = useMemo(() => {
         const identitySet = new Set()
         identitySet.add(identity || 'The Athlete')
         habits.forEach(h => {
             if (h.identityName) identitySet.add(h.identityName)
         })
+        badHabits.forEach(h => {
+            if (h.identityName) identitySet.add(h.identityName)
+        })
         return Array.from(identitySet)
-    }, [habits, identity])
+    }, [habits, badHabits, identity])
 
     const [selectedIdentity, setSelectedIdentity] = useState(null)
     const [strategies, setStrategies] = useState({}) // { identityName: { engines: [...], brakes: [...] } }
@@ -57,8 +61,17 @@ export default function EnvironmentDesign() {
     useEffect(() => {
         if (user) {
             loadStrategies()
+            loadBadHabits()
         }
     }, [user])
+
+
+
+    const loadBadHabits = async () => {
+        if (!user) return
+        const { data } = await firestoreService.getBadHabits(user.uid)
+        setBadHabits(data || [])
+    }
 
     const loadStrategies = async () => {
         if (!user) return
@@ -84,6 +97,35 @@ export default function EnvironmentDesign() {
             return habitIdentity === selectedIdentity
         })
     }, [habits, identity, selectedIdentity])
+
+    const identityBadHabits = useMemo(() => {
+        return badHabits.filter(h => (h.identityName || identity) === selectedIdentity)
+    }, [badHabits, identity, selectedIdentity])
+
+    // Prefill strategies from existing habits/bad habits if strategy is empty
+    useEffect(() => {
+        if (!selectedIdentity) return
+        setStrategies(prev => {
+            const existing = prev[selectedIdentity] || { engines: [], brakes: [] }
+            if (existing.engines.length > 0 || existing.brakes.length > 0) return prev
+
+            const engines = identityHabits.map(h => ({
+                habitTitle: h.title || '',
+                icon: 'fitness_center',
+                schedule: [h.category, h.time].filter(Boolean).join(' • '),
+                strategy: ''
+            }))
+            const brakes = identityBadHabits.map(h => ({
+                habitTitle: h.name || '',
+                icon: 'block',
+                schedule: '',
+                strategy: ''
+            }))
+
+            if (engines.length === 0 && brakes.length === 0) return prev
+            return { ...prev, [selectedIdentity]: { engines, brakes } }
+        })
+    }, [selectedIdentity, identityHabits, identityBadHabits])
 
     // Get strategies for current identity
     const currentStrategies = useMemo(() => {

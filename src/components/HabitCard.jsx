@@ -9,26 +9,7 @@ export default function HabitCard({ habit, completed, onComplete, onEdit, onDele
 
   return (
     <div className="group relative overflow-hidden bg-white rounded-2xl shadow-sm border border-zinc-200 hover:shadow-card-hover hover:border-secondary/40 transition-all duration-300">
-      <div className="absolute top-4 right-4 z-20 flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
-        <button
-          onClick={(e) => { e.stopPropagation(); onEdit(habit); }}
-          className="bg-white/90 hover:bg-secondary text-zinc-400 hover:text-white p-2 rounded-lg shadow-sm transition-all"
-          title="Edit habit"
-        >
-          <span className="material-symbols-outlined text-[20px]">edit</span>
-        </button>
-        <button
-          onClick={() => {
-            if (window.confirm('Are you sure you want to delete this habit?')) {
-              onDelete(id);
-            }
-          }}
-          className="bg-white/90 hover:bg-red-500 text-zinc-400 hover:text-white p-2 rounded-lg shadow-sm transition-all"
-          title="Delete habit"
-        >
-          <span className="material-symbols-outlined text-[20px]">delete</span>
-        </button>
-      </div>
+
       <div className={`absolute top-0 left-0 w-1 h-full transition-all ${completed ? 'bg-primary w-1.5' : 'bg-zinc-200 group-hover:bg-secondary/50'}`}></div>
       <div className="p-6 flex flex-col justify-between gap-4">
         <div className="flex justify-between items-start">
@@ -98,6 +79,26 @@ export default function HabitCard({ habit, completed, onComplete, onEdit, onDele
             <div className="flex flex-col">
               <span className="text-xs text-zinc-400 italic">"{twoMinRule}"</span>
             </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(habit); }}
+              className="bg-white hover:bg-secondary/10 text-zinc-400 hover:text-secondary p-2 rounded-lg border border-zinc-200 transition-all"
+              title="Edit habit"
+            >
+              <span className="material-symbols-outlined text-[20px]">edit</span>
+            </button>
+            <button
+              onClick={() => {
+                if (window.confirm('Are you sure you want to delete this habit?')) {
+                  onDelete(id);
+                }
+              }}
+              className="bg-white hover:bg-red-50 text-zinc-400 hover:text-red-500 p-2 rounded-lg border border-zinc-200 transition-all"
+              title="Delete habit"
+            >
+              <span className="material-symbols-outlined text-[20px]">delete</span>
+            </button>
           </div>
           <button
             onClick={() => {

@@ -20,7 +20,7 @@ import {
 } from '../utils/statistics'
 
 export default function Dashboard() {
-  const { identity, habits, toggleHabitComplete, deleteHabit, allCompletions } = useUser();
+  const { identity, setIdentity, habits, toggleHabitComplete, deleteHabit, allCompletions } = useUser();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -52,6 +52,14 @@ export default function Dashboard() {
     setLoadingBadHabits(false);
   };
 
+
+  const identityOptions = useMemo(() => {
+    const identitySet = new Set();
+    if (identity) identitySet.add(identity);
+    habits.forEach(h => { if (h.identityName) identitySet.add(h.identityName); });
+    badHabits.forEach(h => { if (h.identityName) identitySet.add(h.identityName); });
+    return Array.from(identitySet);
+  }, [identity, habits, badHabits]);
   // Calculate real statistics
   const totalVotes = useMemo(() => calculateIdentityVotes(allCompletions), [allCompletions]);
   const userLevel = useMemo(() => calculateUserLevel(totalVotes), [totalVotes]);
@@ -156,9 +164,22 @@ export default function Dashboard() {
               </span>
               <span className="text-slate-400 text-xs">• Week {weekNumber}</span>
             </div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 leading-tight">
-              Identity: {identity}
-            </h1>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 leading-tight">
+                Identity: {identity}
+              </h1>
+              {identityOptions.length > 1 && (
+                <select
+                  value={identity || ''}
+                  onChange={(e) => setIdentity(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-700"
+                >
+                  {identityOptions.map((identityName) => (
+                    <option key={identityName} value={identityName}>{identityName}</option>
+                  ))}
+                </select>
+              )}
+            </div>
             <p className="text-slate-500 mt-2 text-lg">
               "Every action you take is a vote for the type of person you wish to become."
             </p>
@@ -275,7 +296,7 @@ export default function Dashboard() {
             </div>
 
             <div className="flex flex-col gap-4">
-              {badHabits.length === 0 && (
+              {badHabits.filter(h => (h.identityName || identity) === identity).length === 0 && (
                 <div className="bg-white rounded-xl p-8 border border-slate-100 text-center flex flex-col items-center gap-3">
                   <span className="material-symbols-outlined text-slate-300 text-4xl">check_circle</span>
                   <p className="text-slate-500 font-medium">No bad habits tracked yet.</p>
@@ -288,7 +309,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {badHabits.map(badHabit => {
+              {badHabits.filter(h => (h.identityName || identity) === identity).map(badHabit => {
                 const daysFree = getDaysFree(badHabit);
                 const totalLapses = badHabit.lapses?.length || 0;
                 // Calculate record (simplified for now, ideally would calculate max gap between lapses)
@@ -337,7 +358,14 @@ export default function Dashboard() {
                       ></div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 mt-2">
+                    <div className="grid grid-cols-2 gap-3 mt-2">
+                      <button
+                        onClick={() => navigate(`/identity?editBad=${badHabit.id}`)}
+                        className="bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg px-4 py-2.5 text-[11px] font-black uppercase tracking-widest transition-all w-full flex items-center justify-center gap-2"
+                      >
+                        <span className="material-symbols-outlined text-sm">edit</span>
+                        Edit
+                      </button>
                       <button
                         onClick={() => handleLogRelapse(badHabit.id)}
                         className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-lg px-4 py-2.5 text-[11px] font-black uppercase tracking-widest transition-all w-full flex items-center justify-center gap-2 group-hover:bg-red-100"
@@ -346,6 +374,20 @@ export default function Dashboard() {
                         Log Relapse
                       </button>
                     </div>
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm('Delete this bad habit? This action cannot be undone.')) return;
+                        const result = await firestoreService.deleteBadHabit(user.uid, badHabit.id);
+                        if (result.success) {
+                          setBadHabits(prev => prev.filter(h => h.id !== badHabit.id));
+                        } else {
+                          alert('Failed to delete bad habit.');
+                        }
+                      }}
+                      className="text-xs text-red-500 font-bold hover:text-red-700 self-end"
+                    >
+                      Delete Habit
+                    </button>
                   </div>
                 );
               })}
