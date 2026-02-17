@@ -7,6 +7,7 @@ A React-based habit tracking application inspired by Atomic Habits by James Clea
 - **Landing Page** - Authentication and onboarding
 - **Dashboard** - Main habit tracking interface with heatmaps
 - **Identity Management** - Define your identity and beliefs
+- **Environment Design** - Design your environment to support your habits
 - **Performance Tracker** - Analytics and historical data
 - **Weekly Review** - Reflect on your progress
 
@@ -38,3 +39,4 @@ npm run build
 - React Router v6
 - Tailwind CSS
 - Vite
+- Firebase
