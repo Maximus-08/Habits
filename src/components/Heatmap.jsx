@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Calendar, ChevronDown, ChevronUp, Zap, HelpCircle } from 'lucide-react';
 import { useHabits } from '../context/HabitsContext';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/Primitives';
+import { getLocalDateString } from '../utils/dateUtils';
 
 export default function Heatmap() {
   const { completions } = useHabits();
@@ -14,60 +15,58 @@ export default function Heatmap() {
   const WEEKS_EXPANDED = 53;  // 1 year
   const numWeeks = expanded ? WEEKS_EXPANDED : WEEKS_COLLAPSED;
 
-  // Build grid dates
-  const today = new Date();
-  const endDate = new Date(today);
-  // Roll back to the nearest Sunday of the start date
-  const totalDays = numWeeks * DAYS_IN_WEEK;
-  const startDate = new Date(endDate);
-  startDate.setDate(endDate.getDate() - totalDays + 1);
+  const today = useMemo(() => new Date(), []);
+  const todayStr = useMemo(() => getLocalDateString(today), [today]);
 
-  // Align start date to Sunday
-  const startDayOffset = startDate.getDay(); // 0 is Sunday
-  startDate.setDate(startDate.getDate() - startDayOffset);
+  const { dates, columns } = useMemo(() => {
+    const endDate = new Date(today);
+    const totalDays = numWeeks * DAYS_IN_WEEK;
+    const startDate = new Date(endDate);
+    startDate.setDate(endDate.getDate() - totalDays + 1);
 
-  // Create flat array of dates in chronological order
-  const dates = [];
-  const dateCursor = new Date(startDate);
-  while (dateCursor <= endDate) {
-    dates.push(new Date(dateCursor));
-    dateCursor.setDate(dateCursor.getDate() + 1);
-  }
+    const startDayOffset = startDate.getDay();
+    startDate.setDate(startDate.getDate() - startDayOffset);
 
-  // Map completions by normalized date
-  const completionsByDate = completions.reduce((acc, c) => {
-    const dStr = c.dateNormalized;
-    if (!acc[dStr]) {
-      acc[dStr] = { count: 0, hasTwoMin: false };
+    const datesArr = [];
+    const dateCursor = new Date(startDate);
+    while (dateCursor <= endDate) {
+      datesArr.push(new Date(dateCursor));
+      dateCursor.setDate(dateCursor.getDate() + 1);
     }
-    acc[dStr].count += 1;
-    if (c.isTwoMinVersion) {
-      acc[dStr].hasTwoMin = true;
+
+    const cols = [];
+    for (let i = 0; i < datesArr.length; i += DAYS_IN_WEEK) {
+      cols.push(datesArr.slice(i, i + DAYS_IN_WEEK));
     }
-    return acc;
-  }, {});
 
-  // Stats
-  const totalVotes = completions.length;
-  const twoMinVotes = completions.filter(c => c.isTwoMinVersion).length;
-  const standardVotes = totalVotes - twoMinVotes;
+    return { dates: datesArr, columns: cols };
+  }, [numWeeks, today]);
 
-  // Render color based on count
-  const getCellColor = (count) => {
-    if (!count) return 'bg-[#F2ECE4] border-[#E5DDD4]'; // Empty cream cell
-    if (count === 1) return 'bg-[#CBE4CD] border-[#B7D7B9]'; // Light sage
-    if (count === 2) return 'bg-[#A3C9A8] border-[#8FB795]'; // Success sage
-    return 'bg-[#7CAE82] border-[#699E70]'; // Darker sage
-  };
+  const completionsByDate = useMemo(() => {
+    return completions.reduce((acc, c) => {
+      const dStr = c.dateNormalized;
+      if (!acc[dStr]) {
+        acc[dStr] = { count: 0, hasTwoMin: false };
+      }
+      acc[dStr].count += 1;
+      if (c.isTwoMinVersion) {
+        acc[dStr].hasTwoMin = true;
+      }
+      return acc;
+    }, {});
+  }, [completions]);
 
-  // Group dates into weeks (columns)
-  const columns = [];
-  for (let i = 0; i < dates.length; i += DAYS_IN_WEEK) {
-    columns.push(dates.slice(i, i + DAYS_IN_WEEK));
-  }
+  const { totalVotes, twoMinVotes, standardVotes } = useMemo(() => {
+    const total = completions.length;
+    const twoMin = completions.filter(c => c.isTwoMinVersion).length;
+    return {
+      totalVotes: total,
+      twoMinVotes: twoMin,
+      standardVotes: total - twoMin
+    };
+  }, [completions]);
 
-  // Get month labels
-  const getMonthLabels = () => {
+  const monthLabels = useMemo(() => {
     const labels = [];
     let prevMonth = -1;
     columns.forEach((week, colIdx) => {
@@ -82,9 +81,14 @@ export default function Heatmap() {
       }
     });
     return labels;
-  };
+  }, [columns]);
 
-  const monthLabels = getMonthLabels();
+  const getCellColor = (count) => {
+    if (!count) return 'bg-[#F2ECE4] border-[#E5DDD4]'; // Empty cream cell
+    if (count === 1) return 'bg-[#CBE4CD] border-[#B7D7B9]'; // Light sage
+    if (count === 2) return 'bg-[#A3C9A8] border-[#8FB795]'; // Success sage
+    return 'bg-[#7CAE82] border-[#699E70]'; // Darker sage
+  };
 
   return (
     <Card hoverLift={false} className="border border-border/60">
@@ -115,9 +119,9 @@ export default function Heatmap() {
           <div className="min-w-[320px] flex flex-col space-y-1.5 pt-1">
             {/* Month Headers */}
             <div className="relative h-4 text-[9px] font-mono text-muted">
-              {monthLabels.map((lbl, idx) => (
+              {monthLabels.map((lbl) => (
                 <span
-                  key={idx}
+                  key={`${lbl.text}_${lbl.colIdx}`}
                   className="absolute"
                   style={{ left: `${lbl.colIdx * 13 + 18}px` }}
                 >
@@ -140,9 +144,9 @@ export default function Heatmap() {
                 {columns.map((week, colIdx) => (
                   <div key={colIdx} className="flex flex-col gap-[3px]">
                     {week.map((date, rowIdx) => {
-                      const dStr = date.toISOString().split('T')[0];
+                      const dStr = getLocalDateString(date);
                       const comp = completionsByDate[dStr] || { count: 0, hasTwoMin: false };
-                      const isToday = dStr === today.toISOString().split('T')[0];
+                      const isToday = dStr === todayStr;
                       
                       return (
                         <div
@@ -151,6 +155,7 @@ export default function Heatmap() {
                             isToday ? 'ring-1 ring-primary' : ''
                           }`}
                           title={`${date.toDateString()}: ${comp.count} vote(s) ${comp.hasTwoMin ? '(including 2-min rule)' : ''}`}
+                          aria-label={`${date.toDateString()}: ${comp.count} vote(s) ${comp.hasTwoMin ? '(including 2-min rule)' : ''}`}
                         >
                           {/* 2-Min rule indicator dot */}
                           {comp.hasTwoMin && (

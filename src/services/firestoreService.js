@@ -11,50 +11,37 @@ import {
   getDoc,
   addDoc,
   writeBatch,
-  query
+  query,
+  runTransaction
 } from 'firebase/firestore';
 
-const LEVELS = [
-  { level: 1, name: "Seedling", minVotes: 0 },
-  { level: 2, name: "Sprout", minVotes: 25 },
-  { level: 3, name: "Grower", minVotes: 75 },
-  { level: 4, name: "Contender", minVotes: 150 },
-  { level: 5, name: "Atomic", minVotes: 300 },
-  { level: 6, name: "1% Machine", minVotes: 600 },
-  { level: 7, name: "Compounding", minVotes: 1200 },
-  { level: 8, name: "Identity Locked", minVotes: 2500 },
-];
-
-function calculateLevelFromVotes(totalVotes) {
-  let activeLevel = 1;
-  for (let i = LEVELS.length - 1; i >= 0; i--) {
-    if (totalVotes >= LEVELS[i].minVotes) {
-      activeLevel = LEVELS[i].level;
-      break;
-    }
-  }
-  return activeLevel;
-}
+import { LEVELS, calculateLevelFromVotes } from '../utils/constants';
 
 export const firestoreService = {
   // --- REAL-TIME SUBSCRIBERS ---
 
+  ensureUserProfile: async (userId) => {
+    const userRef = doc(db, 'users', userId);
+    const snap = await getDoc(userRef);
+    if (!snap.exists()) {
+      const initialProfile = {
+        userId,
+        level: 1,
+        totalVotes: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      await setDoc(userRef, initialProfile);
+      return initialProfile;
+    }
+    return snap.data();
+  },
+
   subscribeUserProfile: (userId, callback, onError) => {
     const userRef = doc(db, 'users', userId);
-    return onSnapshot(userRef, async (snapshot) => {
+    return onSnapshot(userRef, (snapshot) => {
       if (snapshot.exists()) {
         callback(snapshot.data());
-      } else {
-        // Initialize new user profile document
-        const initialProfile = {
-          userId,
-          level: 1,
-          totalVotes: 0,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        await setDoc(userRef, initialProfile);
-        callback(initialProfile);
       }
     }, onError);
   },
@@ -121,83 +108,91 @@ export const firestoreService = {
   updateIdentity: async (userId, id, fields) => {
     const docRef = doc(db, 'users', userId, 'identities', id);
     await updateDoc(docRef, fields);
-
-    // Cascade name changes if name changed
-    if (fields.name) {
-      const batch = writeBatch(db);
-      
-      // Habits update
-      // Handled in client context loop for simplicity or database subqueries
-    }
   },
 
-  deleteIdentity: async (userId, id) => {
-    // Delete the identity document
-    const docRef = doc(db, 'users', userId, 'identities', id);
-    await deleteDoc(docRef);
-    
-    // Cascading deletes should be run by context or batch
+  deleteIdentityAtomic: async (userId, identityId, habits, badHabits, completions, totalVotes) => {
+    const deletes = [];
+
+    // 1. Delete the identity document
+    deletes.push(doc(db, 'users', userId, 'identities', identityId));
+
+    // 2. Delete all linked habits
+    habits.forEach(h => {
+      if (h.identityId === identityId) {
+        deletes.push(doc(db, 'users', userId, 'habits', h.id));
+      }
+    });
+
+    // 3. Delete all linked bad habits
+    badHabits.forEach(b => {
+      if (b.identityId === identityId) {
+        deletes.push(doc(db, 'users', userId, 'badHabits', b.id));
+      }
+    });
+
+    // 4. Delete all linked completions and calculate votes to subtract
+    let deletedCompletionsCount = 0;
+    completions.forEach(c => {
+      if (c.identityId === identityId) {
+        deletes.push(doc(db, 'users', userId, 'completions', c.id));
+        deletedCompletionsCount++;
+      }
+    });
+
+    // Commit deletions in chunks of 400 to prevent hitting Firestore batch limit
+    const chunkSize = 400;
+    for (let i = 0; i < deletes.length; i += chunkSize) {
+      const chunk = deletes.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach(ref => {
+        batch.delete(ref);
+      });
+      await batch.commit();
+    }
+
+    // 5. Update user profile votes & level
+    const newVotes = Math.max(0, totalVotes - deletedCompletionsCount);
+    const newLevel = calculateLevelFromVotes(newVotes);
+
+    const userProfileRef = doc(db, 'users', userId);
+    await updateDoc(userProfileRef, {
+      totalVotes: newVotes,
+      level: newLevel,
+      updatedAt: new Date().toISOString()
+    });
   },
 
   cascadeIdentityRename: async (userId, identityId, newName, habits, badHabits, completions) => {
-    const batch = writeBatch(db);
-    let changed = false;
+    const updates = [];
 
     habits.forEach(h => {
       if (h.identityId === identityId) {
-        const docRef = doc(db, 'users', userId, 'habits', h.id);
-        batch.update(docRef, { identityName: newName });
-        changed = true;
+        updates.push({
+          ref: doc(db, 'users', userId, 'habits', h.id),
+          data: { identityName: newName }
+        });
       }
     });
 
     badHabits.forEach(b => {
       if (b.identityId === identityId) {
-        const docRef = doc(db, 'users', userId, 'badHabits', b.id);
-        batch.update(docRef, { identityName: newName });
-        changed = true;
+        updates.push({
+          ref: doc(db, 'users', userId, 'badHabits', b.id),
+          data: { identityName: newName }
+        });
       }
     });
 
-    completions.forEach(c => {
-      if (c.identityId === identityId) {
-        const docRef = doc(db, 'users', userId, 'completions', c.id);
-        batch.update(docRef, { identityName: newName });
-        changed = true;
-      }
-    });
+    // We intentionally do not loop over and update completions on rename.
+    // Completions don't display identityName and only use identityId.
 
-    if (changed) {
-      await batch.commit();
-    }
-  },
-
-  cascadeIdentityDelete: async (userId, identityId, habits, badHabits, completions) => {
-    const batch = writeBatch(db);
-    let changed = false;
-
-    habits.forEach(h => {
-      if (h.identityId === identityId) {
-        batch.delete(doc(db, 'users', userId, 'habits', h.id));
-        changed = true;
-      }
-    });
-
-    badHabits.forEach(b => {
-      if (b.identityId === identityId) {
-        batch.delete(doc(db, 'users', userId, 'badHabits', b.id));
-        changed = true;
-      }
-    });
-
-    completions.forEach(c => {
-      if (c.identityId === identityId) {
-        batch.delete(doc(db, 'users', userId, 'completions', c.id));
-        changed = true;
-      }
-    });
-
-    if (changed) {
+    const chunkSize = 400;
+    for (let i = 0; i < updates.length; i += chunkSize) {
+      const chunk = updates.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach(op => {
+        batch.update(op.ref, op.data);
+      });
       await batch.commit();
     }
   },
@@ -220,20 +215,42 @@ export const firestoreService = {
     await updateDoc(docRef, fields);
   },
 
-  deleteHabit: async (userId, id, completions) => {
-    // Delete Habit
-    await deleteDoc(doc(db, 'users', userId, 'habits', id));
+  deleteHabit: async (userId, id, completions, totalVotes) => {
+    const deletes = [];
 
-    // Batch delete its completions
-    const batch = writeBatch(db);
-    let changed = false;
+    // 1. Delete Habit
+    deletes.push(doc(db, 'users', userId, 'habits', id));
+
+    // 2. Delete all linked completions and calculate votes to subtract
+    let deletedCompletionsCount = 0;
     completions.forEach(c => {
       if (c.habitId === id) {
-        batch.delete(doc(db, 'users', userId, 'completions', c.id));
-        changed = true;
+        deletes.push(doc(db, 'users', userId, 'completions', c.id));
+        deletedCompletionsCount++;
       }
     });
-    if (changed) await batch.commit();
+
+    // Commit deletions in chunks of 400
+    const chunkSize = 400;
+    for (let i = 0; i < deletes.length; i += chunkSize) {
+      const chunk = deletes.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach(ref => {
+        batch.delete(ref);
+      });
+      await batch.commit();
+    }
+
+    // 3. Update user profile votes & level
+    const newVotes = Math.max(0, totalVotes - deletedCompletionsCount);
+    const newLevel = calculateLevelFromVotes(newVotes);
+
+    const userProfileRef = doc(db, 'users', userId);
+    await updateDoc(userProfileRef, {
+      totalVotes: newVotes,
+      level: newLevel,
+      updatedAt: new Date().toISOString()
+    });
   },
 
   // --- BAD HABIT CRUD ---
@@ -283,45 +300,54 @@ export const firestoreService = {
 
   // --- COMPLETION VOTE SYSTEM ---
 
-  toggleCompletion: async (userId, habitId, dateNormalized, isTwoMinVersion, notes, habit, completions, totalVotes) => {
-    const existingIndex = completions.findIndex(
-      c => c.habitId === habitId && c.dateNormalized === dateNormalized
-    );
-
+  toggleCompletion: async (userId, habitId, dateNormalized, isTwoMinVersion, notes, habit) => {
+    const compDocRef = doc(db, 'users', userId, 'completions', `${habitId}_${dateNormalized}`);
     const userProfileRef = doc(db, 'users', userId);
 
-    if (existingIndex !== -1) {
-      // Remove completion
-      const compId = completions[existingIndex].id;
-      await deleteDoc(doc(db, 'users', userId, 'completions', compId));
-      
-      // Decrement votes
-      const newVotes = Math.max(0, totalVotes - 1);
-      const newLevel = calculateLevelFromVotes(newVotes);
-      await updateDoc(userProfileRef, { totalVotes: newVotes, level: newLevel, updatedAt: new Date().toISOString() });
-      return { status: 'removed' };
-    } else {
-      // Add completion
-      const completionsRef = collection(db, 'users', userId, 'completions');
-      const newDocRef = doc(completionsRef);
-      const newCompletion = {
-        userId,
-        habitId,
-        identityId: habit.identityId,
-        identityName: habit.identityName,
-        completedAt: new Date().toISOString(),
-        dateNormalized,
-        isTwoMinVersion,
-        notes
-      };
-      await setDoc(newDocRef, newCompletion);
+    return await runTransaction(db, async (transaction) => {
+      const compSnap = await transaction.get(compDocRef);
+      const profileSnap = await transaction.get(userProfileRef);
 
-      // Increment votes
-      const newVotes = totalVotes + 1;
-      const newLevel = calculateLevelFromVotes(newVotes);
-      await updateDoc(userProfileRef, { totalVotes: newVotes, level: newLevel, updatedAt: new Date().toISOString() });
-      return { status: 'added', completion: { id: newDocRef.id, ...newCompletion } };
-    }
+      let currentVotes = 0;
+      if (profileSnap.exists()) {
+        currentVotes = profileSnap.data().totalVotes || 0;
+      }
+
+      if (compSnap.exists()) {
+        // Remove completion
+        transaction.delete(compDocRef);
+        
+        const newVotes = Math.max(0, currentVotes - 1);
+        const newLevel = calculateLevelFromVotes(newVotes);
+        transaction.update(userProfileRef, {
+          totalVotes: newVotes,
+          level: newLevel,
+          updatedAt: new Date().toISOString()
+        });
+        return { status: 'removed' };
+      } else {
+        // Add completion
+        const newCompletion = {
+          userId,
+          habitId,
+          identityId: habit.identityId,
+          completedAt: new Date().toISOString(),
+          dateNormalized,
+          isTwoMinVersion: isTwoMinVersion || false,
+          notes: notes || ""
+        };
+        transaction.set(compDocRef, newCompletion);
+
+        const newVotes = currentVotes + 1;
+        const newLevel = calculateLevelFromVotes(newVotes);
+        transaction.update(userProfileRef, {
+          totalVotes: newVotes,
+          level: newLevel,
+          updatedAt: new Date().toISOString()
+        });
+        return { status: 'added', completion: { id: compDocRef.id, ...newCompletion } };
+      }
+    });
   },
 
   // --- WEEKLY REVIEW ---

@@ -10,7 +10,7 @@ const CATEGORIES = ["Physical Health", "Mind & Creativity", "Work & Finance", "R
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const { addIdentity, addHabit } = useHabits();
+  const { addIdentity, addHabit, currentUser } = useHabits();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
@@ -115,11 +115,17 @@ export default function Onboarding() {
         immediateReward
       });
 
-      // Navigate directly - Firestore snapshots handles context sync
+      // Onboarding successfully completed
+      if (currentUser) {
+        localStorage.setItem(`atomic_onboarded_${currentUser.uid}`, 'true');
+      }
       navigate('/dashboard');
     } catch (err) {
       console.error("Onboarding setup error:", err);
       sessionStorage.removeItem('onboarding_submitted');
+      if (currentUser) {
+        localStorage.removeItem(`atomic_onboarded_${currentUser.uid}`);
+      }
       toast.error(`Setup failed: ${err.message || err}`);
     } finally {
       setLoading(false);

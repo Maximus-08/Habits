@@ -1,5 +1,6 @@
 // Local-first Database Service using LocalStorage
 // Simulates Firestore schemas and cascade updates
+import { calculateLevelFromVotes } from '../utils/constants';
 
 const STORAGE_KEYS = {
   IDENTITIES: 'atomic_identities',
@@ -157,8 +158,13 @@ const generateSeedCompletions = () => {
 
 // Helper: load/save from localStorage
 const load = (key, fallback) => {
-  const data = localStorage.getItem(key);
-  return data ? JSON.parse(data) : fallback;
+  try {
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : fallback;
+  } catch (e) {
+    console.error(`Failed to parse localStorage key "${key}":`, e);
+    return fallback;
+  }
 };
 
 const save = (key, data) => {
@@ -209,8 +215,8 @@ function getWeekNumber(d) {
   return weekNo;
 }
 
-// Call initDB immediately on import
-initDB();
+// Call initDB immediately on import removed to avoid module load side-effects.
+// Entry points should call it explicitly if needed.
 
 export const dbService = {
   // --- USER PROFILE ---
@@ -441,7 +447,7 @@ export const dbService = {
     } else {
       // Cast Vote (Add Completion)
       const newCompletion = {
-        id: `completion_${Date.now()}`,
+        id: `completion_${habitId}_${dateNormalized}`,
         userId,
         habitId,
         identityId: habit.identityId,
@@ -466,34 +472,8 @@ export const dbService = {
     const profile = dbService.getUserProfile();
     const totalVotes = Math.max(0, (profile.totalVotes || 0) + amount);
     
-    // Recompute level based on total votes
-    // Level formula:
-    // Level 1: 0 votes
-    // Level 2: 25 votes
-    // Level 3: 75 votes
-    // Level 4: 150 votes
-    // Level 5: 300 votes
-    // Level 6: 600 votes
-    // Level 7: 1200 votes
-    // Level 8: 2500 votes
-    const LEVELS = [
-      { level: 1, name: "Seedling", minVotes: 0 },
-      { level: 2, name: "Sprout", minVotes: 25 },
-      { level: 3, name: "Grower", minVotes: 75 },
-      { level: 4, name: "Contender", minVotes: 150 },
-      { level: 5, name: "Atomic", minVotes: 300 },
-      { level: 6, name: "1% Machine", minVotes: 600 },
-      { level: 7, name: "Compounding", minVotes: 1200 },
-      { level: 8, name: "Identity Locked", minVotes: 2500 },
-    ];
-    
-    let activeLevel = 1;
-    for (let i = LEVELS.length - 1; i >= 0; i--) {
-      if (totalVotes >= LEVELS[i].minVotes) {
-        activeLevel = LEVELS[i].level;
-        break;
-      }
-    }
+    // Recompute level based on total votes using shared utility
+    const activeLevel = calculateLevelFromVotes(totalVotes);
 
     dbService.updateUserProfile({ totalVotes, level: activeLevel });
   },

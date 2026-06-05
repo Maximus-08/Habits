@@ -83,12 +83,36 @@ export default function InteractiveGuide({ onComplete, forceStart = false }) {
     STEPS.forEach(step => {
       if (step.targetId) {
         const el = document.getElementById(step.targetId);
-        if (el) el.className = el.className.replace(/ring-[\s\S]*?/g, '').trim();
+        if (el) {
+          el.style.boxShadow = '';
+          el.style.position = '';
+          el.style.zIndex = '';
+          el.style.transition = '';
+          el.className = el.className.replace(/ring-[\s\S]*?/g, '').trim();
+        }
       }
     });
 
     if (onComplete) onComplete();
   };
+
+  // Cleanup highlights on unmount
+  useEffect(() => {
+    return () => {
+      STEPS.forEach(step => {
+        if (step.targetId) {
+          const el = document.getElementById(step.targetId);
+          if (el) {
+            el.style.boxShadow = '';
+            el.style.position = '';
+            el.style.zIndex = '';
+            el.style.transition = '';
+            el.className = el.className.replace(/ring-[\s\S]*?/g, '').trim();
+          }
+        }
+      });
+    };
+  }, []);
 
   // Dynamically apply highlight style to target element
   useEffect(() => {
@@ -102,6 +126,7 @@ export default function InteractiveGuide({ onComplete, forceStart = false }) {
           el.style.boxShadow = '';
           el.style.position = '';
           el.style.zIndex = '';
+          el.style.transition = '';
         }
       }
     });

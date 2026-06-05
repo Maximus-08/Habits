@@ -13,6 +13,19 @@ import {
   persistentMultipleTabManager 
 } from 'firebase/firestore';
 
+const requiredEnvVars = [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_APP_ID'
+];
+
+requiredEnvVars.forEach(key => {
+  if (!import.meta.env[key]) {
+    throw new Error(`Missing environment variable: ${key}. Please check your .env configuration.`);
+  }
+});
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,

@@ -37,10 +37,10 @@ The interface features a warm, high-contrast, premium color scheme (terracotta, 
 
 ## Technical Architecture
 
-### 1. Local-First Caching & Fallback
-- Runs database operations through a LocalStorage DB service (`dbService`) if Cloud Firestore is unreachable (with a 2.5-second timeout safety guard).
-- Displays a top warning banner when operating offline.
-- Automatically reconciles offline edits to Cloud Firestore upon reconnecting.
+### 1. Database Connection Safety Guard
+- Employs a 2.5-second Firestore connection timeout safety guard to prevent hanging loading screens.
+- Displays a user-friendly, blocking "Connection Unreachable" screen when Firestore is unreachable or offline, allowing users to retry their connection.
+- Integrates toast notifications warning the user if the network connection is slow or degraded.
 
 ### 2. Dual Deduplication System
 - **Client-Side Selector (`useMemo`)**: Intercepts loaded context states to filter and deduplicate records before they are rendered, resolving UI bloat instantly.
@@ -81,6 +81,18 @@ The application will run locally at `http://localhost:5173`.
 npm run build
 ```
 Creates minified, production-ready assets inside the `dist/` directory.
+
+### 5. Run Linter
+```bash
+npm run lint
+```
+Checks the codebase for any syntax errors or style issues using ESLint.
+
+### 6. Run Unit Tests
+```bash
+npm test
+```
+Runs the unit test suite using Vitest.
 
 ---
 

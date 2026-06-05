@@ -353,7 +353,7 @@ export const HabitsProvider = ({ children }) => {
     } finally {
       setIsCleaningUp(false);
     }
-  }, []);
+  }, [setIsCleaningUp]);
 
   // Auth State Listener and Firestore Data Syncer
   useEffect(() => {

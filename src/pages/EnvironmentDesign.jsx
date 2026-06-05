@@ -34,14 +34,19 @@ export default function EnvironmentDesign() {
     setEditedPreps(prev => ({ ...prev, [habitId]: value }));
   };
 
-  const handleSavePrep = (habitId) => {
+  const handleSavePrep = async (habitId) => {
     const newVal = editedPreps[habitId];
     if (newVal === undefined) return;
     
-    updateHabit(habitId, { environmentPrep: newVal });
-    toast.success("Good habit Engine strategy locked!", {
-      style: { background: '#FFFAF3', color: '#4A4036', border: '1px solid #EAE4DD' }
-    });
+    try {
+      await updateHabit(habitId, { environmentPrep: newVal });
+      toast.success("Good habit Engine strategy locked!", {
+        style: { background: '#FFFAF3', color: '#4A4036', border: '1px solid #EAE4DD' }
+      });
+    } catch (error) {
+      console.error("Failed to save habit prep:", error);
+      toast.error("Failed to save. Please try again.");
+    }
   };
 
   // Brakes handlers (bad habits friction rules)
@@ -55,14 +60,19 @@ export default function EnvironmentDesign() {
     }));
   };
 
-  const handleSaveBrakes = (badHabitId) => {
+  const handleSaveBrakes = async (badHabitId) => {
     const changes = editedBrakes[badHabitId];
     if (!changes) return;
 
-    updateBadHabit(badHabitId, changes);
-    toast.success("Bad habit Brakes strategy locked!", {
-      style: { background: '#FFFAF3', color: '#4A4036', border: '1px solid #EAE4DD' }
-    });
+    try {
+      await updateBadHabit(badHabitId, changes);
+      toast.success("Bad habit Brakes strategy locked!", {
+        style: { background: '#FFFAF3', color: '#4A4036', border: '1px solid #EAE4DD' }
+      });
+    } catch (error) {
+      console.error("Failed to save bad habit brakes:", error);
+      toast.error("Failed to save. Please try again.");
+    }
   };
 
   // Environment Coach heuristics
