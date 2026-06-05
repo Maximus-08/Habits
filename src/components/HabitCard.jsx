@@ -3,10 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Undo2, Award, Zap, Sparkles, Trash2, Edit } from 'lucide-react';
 import { useHabits } from '../context/HabitsContext';
 import { Card, Button, InfoTooltip } from './ui/Primitives';
+import toast from 'react-hot-toast';
+import { getLocalDateString } from '../utils/dateUtils';
 
 export default function HabitCard({ habit, onEdit, onDelete }) {
   const { completions, selectedDate, toggleCompletion } = useHabits();
   const [hovered, setHovered] = useState(false);
+  const [voting, setVoting] = useState(false);
 
   // Check completions for today
   const completionToday = completions.find(
@@ -17,12 +20,12 @@ export default function HabitCard({ habit, onEdit, onDelete }) {
 
   // Check "Never Miss Twice" - Was yesterday missed?
   // Only trigger this warning if selectedDate is "today" (so we don't display yesterday warning when browsing historical logs)
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString();
   const isSelectedDateToday = selectedDate === todayStr;
 
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  const yesterdayStr = getLocalDateString(yesterday);
 
   const completedYesterday = completions.some(
     c => c.habitId === habit.id && c.dateNormalized === yesterdayStr
@@ -32,22 +35,63 @@ export default function HabitCard({ habit, onEdit, onDelete }) {
   // Show warning if yesterday was missed, but we are looking at today, and the habit wasn't completed today yet, and it has some history
   const isYesterdayMissed = isSelectedDateToday && !completedYesterday && !isCompletedToday && hasPastCompletions;
 
-  const handleVote = (isTwoMin = false) => {
-    toggleCompletion(habit.id, selectedDate, isTwoMin);
+  const handleVote = async (isTwoMin = false) => {
+    if (voting) return;
+    setVoting(true);
+    try {
+      await toggleCompletion(habit.id, selectedDate, isTwoMin);
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || "Failed to record vote");
+    } finally {
+      setVoting(false);
+    }
   };
 
   // Compose implementation intention
-  const hasIntention = habit.stackedHabit || (habit.time && habit.location);
-  const intentionSentence = hasIntention ? (
-    <p className="text-sm text-text font-serif italic mb-3 leading-relaxed">
-      "{habit.stackedHabit ? `${habit.stackedHabit}, ` : "At "}{" "}
-      I will <span className="font-semibold font-sans not-italic text-primary">{habit.title}</span>{" "}
-      {habit.time ? `at ${habit.time}` : ""}{" "}
-      {habit.location ? `in ${habit.location}` : ""}."
-    </p>
-  ) : (
-    <p className="text-sm font-semibold text-text font-sans mb-3">{habit.title}</p>
-  );
+  const hasIntention = !!(habit.stackedHabit?.trim() || habit.time?.trim() || habit.location?.trim());
+
+  let intentionSentence = null;
+  if (hasIntention) {
+    const stack = habit.stackedHabit?.trim() || "";
+    const time = habit.time?.trim() || "";
+    const location = habit.location?.trim() || "";
+    const title = habit.title;
+
+    let prefix = "";
+    let suffix = "";
+
+    if (stack) {
+      prefix = `${stack}, I will `;
+      if (time) {
+        suffix += ` at ${time}`;
+      }
+      if (location) {
+        suffix += ` in ${location}`;
+      }
+    } else {
+      if (time) {
+        prefix = `At ${time} I will `;
+      } else {
+        prefix = "I will ";
+      }
+      if (location) {
+        suffix += ` in ${location}`;
+      }
+    }
+
+    intentionSentence = (
+      <p className="text-sm text-text font-serif italic mb-3 leading-relaxed">
+        "{prefix}
+        <span className="font-semibold font-sans not-italic text-primary">{title}</span>
+        {suffix}."
+      </p>
+    );
+  } else {
+    intentionSentence = (
+      <p className="text-sm font-semibold text-text font-sans mb-3">{habit.title}</p>
+    );
+  }
 
   return (
     <motion.div
@@ -124,8 +168,10 @@ export default function HabitCard({ habit, onEdit, onDelete }) {
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.8, opacity: 0 }}
                     onClick={() => handleVote()}
-                    className="w-12 h-12 bg-success text-white rounded-full flex items-center justify-center cursor-pointer shadow-md hover:bg-primary transition-colors duration-200"
+                    className="w-12 h-12 bg-success text-white rounded-full flex items-center justify-center cursor-pointer shadow-md hover:bg-primary transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Click to Undo"
+                    aria-label="Undo completed habit"
+                    disabled={voting}
                   >
                     {hovered ? (
                       <Undo2 className="w-5 h-5" />
@@ -144,8 +190,10 @@ export default function HabitCard({ habit, onEdit, onDelete }) {
                     {/* Standard Vote Button */}
                     <button
                       onClick={() => handleVote(false)}
-                      className="w-12 h-12 rounded-full border-2 border-border/80 hover:border-success/60 bg-surface flex items-center justify-center cursor-pointer transition-all hover:scale-105"
+                      className="w-12 h-12 rounded-full border-2 border-border/80 hover:border-success/60 bg-surface flex items-center justify-center cursor-pointer transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Cast full vote for identity"
+                      aria-label="Cast full vote for identity"
+                      disabled={voting}
                     >
                       <div className="w-3.5 h-3.5 rounded-full bg-border/40 hover:bg-success/40" />
                     </button>
@@ -158,8 +206,10 @@ export default function HabitCard({ habit, onEdit, onDelete }) {
               {!isCompletedToday && habit.twoMinRule && (
                 <button
                   onClick={() => handleVote(true)}
-                  className="text-[10px] px-2 py-1 rounded bg-hoverBg text-text hover:bg-forgive/20 border border-border/40 flex items-center gap-0.5 cursor-pointer transition-colors"
+                  className="text-[10px] px-2 py-1 rounded bg-hoverBg text-text hover:bg-forgive/20 border border-border/40 flex items-center gap-0.5 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Execute the simplified 2-minute version"
+                  aria-label="Execute the 2-minute version of the habit"
+                  disabled={voting}
                 >
                   <Zap className="w-3 h-3 text-forgive fill-forgive" />
                   <span>2-Min</span>
@@ -179,8 +229,8 @@ export default function HabitCard({ habit, onEdit, onDelete }) {
             </div>
           </div>
           
-          {/* Card footer controls (Edit/Delete) visible on hover */}
-          <div className="flex items-center justify-end border-t border-border/20 mt-4 pt-3 gap-2 opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          {/* Card footer controls (Edit/Delete) */}
+          <div className="flex items-center justify-end border-t border-border/20 mt-4 pt-3 gap-2 opacity-60 hover:opacity-100 focus-within:opacity-100 transition-opacity">
             <button 
               onClick={() => onEdit(habit)} 
               className="p-1.5 text-muted hover:text-text hover:bg-hoverBg rounded transition-colors cursor-pointer"

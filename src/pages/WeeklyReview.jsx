@@ -42,6 +42,7 @@ export default function WeeklyReview() {
   const [learning, setLearning] = useState('');
   const [nextWeek, setNextWeek] = useState('');
   const [status, setStatus] = useState('draft'); // 'draft' or 'completed'
+  const [submitting, setSubmitting] = useState(false);
 
   // Load existing review if present
   useEffect(() => {
@@ -58,33 +59,41 @@ export default function WeeklyReview() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
 
-    const reviewData = {
-      id: reviewId,
-      userId: "user_default",
-      year: currentYear,
-      weekNumber: currentWeekNumber,
-      satisfaction,
-      reflection: {
-        wins,
-        challenges,
-        learning,
-        nextWeek
-      },
-      status
-    };
+    try {
+      const reviewData = {
+        id: reviewId,
+        userId: "user_default",
+        year: currentYear,
+        weekNumber: currentWeekNumber,
+        satisfaction,
+        reflection: {
+          wins,
+          challenges,
+          learning,
+          nextWeek
+        },
+        status
+      };
 
-    await saveWeeklyReview(reviewData);
+      await saveWeeklyReview(reviewData);
 
-    const message = status === 'completed' 
-      ? "Weekly review locked in! System updated." 
-      : "Draft saved successfully.";
-    
-    toast.success(message, {
-      style: { background: '#FFFAF3', color: '#4A4036', border: '1px solid #EAE4DD' }
-    });
+      const message = status === 'completed' 
+        ? "Weekly review locked in! System updated." 
+        : "Draft saved successfully.";
+      
+      toast.success(message, {
+        style: { background: '#FFFAF3', color: '#4A4036', border: '1px solid #EAE4DD' }
+      });
 
-    navigate(status === 'completed' ? '/analytics#reflections' : '/dashboard');
+      navigate(status === 'completed' ? '/analytics#reflections' : '/dashboard');
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || "Failed to save weekly review");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -147,6 +156,7 @@ export default function WeeklyReview() {
                   placeholder="E.g., Did 5 workouts, the cue of laying out the exercise mat worked perfectly..."
                   rows={3}
                   required
+                  disabled={submitting}
                 />
               </div>
 
@@ -160,6 +170,7 @@ export default function WeeklyReview() {
                   placeholder="E.g., Felt too lazy to write on Thursday, stayed up late scrolling phone in bed on Friday..."
                   rows={3}
                   required
+                  disabled={submitting}
                 />
               </div>
 
@@ -173,6 +184,7 @@ export default function WeeklyReview() {
                   placeholder="E.g., Phone screen cue in bedroom is too strong. Must move charger to kitchen corridor..."
                   rows={3}
                   required
+                  disabled={submitting}
                 />
               </div>
 
@@ -186,6 +198,7 @@ export default function WeeklyReview() {
                   placeholder="E.g., Keep snacks locked in safe, enforce brush-teeth rule at 9:00 PM..."
                   rows={3}
                   required
+                  disabled={submitting}
                 />
               </div>
             </div>
@@ -199,6 +212,7 @@ export default function WeeklyReview() {
                   checked={status === 'completed'}
                   onChange={(e) => setStatus(e.target.checked ? 'completed' : 'draft')}
                   className="w-4 w-4 text-primary rounded border-border focus:ring-primary accent-primary cursor-pointer"
+                  disabled={submitting}
                 />
                 <label htmlFor="mark-complete" className="text-xs font-semibold text-text uppercase tracking-wide cursor-pointer">
                   Mark Review as Complete (Lock reflection)
@@ -208,12 +222,12 @@ export default function WeeklyReview() {
 
             {/* Form actions */}
             <div className="flex items-center justify-end gap-2 border-t border-border/20 pt-4">
-              <Button type="button" variant="outline" onClick={() => navigate('/dashboard')}>
+              <Button type="button" variant="outline" onClick={() => navigate('/dashboard')} disabled={submitting}>
                 Cancel
               </Button>
-              <Button type="submit">
+              <Button type="submit" disabled={submitting}>
                 <ClipboardCheck className="w-4 h-4 mr-2" />
-                {status === 'completed' ? "Lock Review" : "Save Draft"}
+                {submitting ? "Saving..." : (status === 'completed' ? "Lock Review" : "Save Draft")}
               </Button>
             </div>
 

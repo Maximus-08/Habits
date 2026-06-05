@@ -13,6 +13,8 @@ import BadHabitCard from '../components/BadHabitCard';
 import Heatmap from '../components/Heatmap';
 import InteractiveGuide from '../components/InteractiveGuide';
 import { Button, Card, CardHeader, CardTitle, CardContent, Dialog, Input, Textarea, Select } from '../components/ui/Primitives';
+import toast from 'react-hot-toast';
+import { getLocalDateString, timeToMinutes, getWeekNumber } from '../utils/dateUtils';
 
 const CATEGORIES = ["Physical Health", "Mind & Creativity", "Work & Finance", "Relationships & Social", "Personal Growth"];
 
@@ -37,7 +39,9 @@ export default function Dashboard() {
     addBadHabit,
     deleteBadHabit,
     getIdentityStrength,
-    getLevelProgress
+    getDaysFree,
+    getLevelProgress,
+    getIdentityLevelProgress
   } = useHabits();
 
   // Guide force start state
@@ -56,6 +60,11 @@ export default function Dashboard() {
   const [identityModalOpen, setIdentityModalOpen] = useState(false);
   const [habitModalOpen, setHabitModalOpen] = useState(false);
   const [badHabitModalOpen, setBadHabitModalOpen] = useState(false);
+
+  // Loading states
+  const [savingIdentity, setSavingIdentity] = useState(false);
+  const [savingHabit, setSavingHabit] = useState(false);
+  const [savingBadHabit, setSavingBadHabit] = useState(false);
   
   // Edit targets
   const [editingHabit, setEditingHabit] = useState(null);
@@ -68,8 +77,8 @@ export default function Dashboard() {
   // Habit Form State
   const [hTitle, setHTitle] = useState('');
   const [hCategory, setHCategory] = useState(CATEGORIES[0]);
-  const [hTime, setHTime] = useState('08:00 AM');
-  const [hLoc, setHLoc] = useState('Living Room');
+  const [hTime, setHTime] = useState('');
+  const [hLoc, setHLoc] = useState('');
   const [hStack, setHStack] = useState('');
   const [hTwoMin, setHTwoMin] = useState('');
   const [hPrep, setHPrep] = useState('');
@@ -86,30 +95,8 @@ export default function Dashboard() {
   // Active identity filtering (default: All)
   const [filterIdentityId, setFilterIdentityId] = useState('all');
 
-  // Time-of-day parsing helper for chronological sorting
-  const timeToMinutes = (timeStr) => {
-    if (!timeStr) return 9999;
-    const cleanTime = timeStr.trim().toUpperCase();
-    const parts = cleanTime.match(/(\d+):(\d+)\s*(AM|PM)/);
-    if (!parts) return 9999;
-    let hours = parseInt(parts[1], 10);
-    const minutes = parseInt(parts[2], 10);
-    const ampm = parts[3];
-    
-    if (ampm === 'PM' && hours < 12) hours += 12;
-    if (ampm === 'AM' && hours === 12) hours = 0;
-    
-    return hours * 60 + minutes;
-  };
-
-  // Week number helper
-  const getWeekNumber = (d) => {
-    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-    var yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
-    var weekNo = Math.ceil(( ( (d - yearStart) / 86400000) + 1)/7);
-    return weekNo;
-  };
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
   // Check if current week's manual review is completed (for reminder banner on Fri/Sat/Sun)
   const today = new Date();
@@ -126,20 +113,29 @@ export default function Dashboard() {
   const levelProgress = getLevelProgress();
 
   // CRUD actions handlers
-  const handleSaveIdentity = (e) => {
+  const handleSaveIdentity = async (e) => {
     e.preventDefault();
     if (!idName.trim()) return;
     
-    if (editingIdentity) {
-      updateIdentity(editingIdentity.id, { name: idName, beliefStatement: idBelief });
-    } else {
-      addIdentity(idName, idBelief || `I am the type of person who is a committed ${idName}.`);
+    setSavingIdentity(true);
+    try {
+      if (editingIdentity) {
+        await updateIdentity(editingIdentity.id, { name: idName, beliefStatement: idBelief });
+        toast.success("Identity updated successfully");
+      } else {
+        await addIdentity(idName, idBelief || `I am the type of person who is a committed ${idName}.`);
+        toast.success("Identity established successfully");
+      }
+      setIdName('');
+      setIdBelief('');
+      setEditingIdentity(null);
+      setIdentityModalOpen(false);
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || "Failed to save identity");
+    } finally {
+      setSavingIdentity(false);
     }
-
-    setIdName('');
-    setIdBelief('');
-    setEditingIdentity(null);
-    setIdentityModalOpen(false);
   };
 
   const handleOpenEditIdentity = (identity) => {
@@ -149,7 +145,19 @@ export default function Dashboard() {
     setIdentityModalOpen(true);
   };
 
-  const handleSaveHabit = (e) => {
+  const handleDeleteIdentity = async (id, name) => {
+    if (confirm(`Delete identity "${name}" and all linked habits/completions?`)) {
+      try {
+        await deleteIdentity(id);
+        toast.success("Identity deleted");
+      } catch (error) {
+        console.error(error);
+        toast.error(error.message || "Failed to delete identity");
+      }
+    }
+  };
+
+  const handleSaveHabit = async (e) => {
     e.preventDefault();
     if (!hTitle.trim() || !hIdentityId) return;
 
@@ -167,14 +175,23 @@ export default function Dashboard() {
       immediateReward: hReward
     };
 
-    if (editingHabit) {
-      updateHabit(editingHabit.id, habitData);
-    } else {
-      addHabit(habitData);
+    setSavingHabit(true);
+    try {
+      if (editingHabit) {
+        await updateHabit(editingHabit.id, habitData);
+        toast.success("Habit system updated");
+      } else {
+        await addHabit(habitData);
+        toast.success("Habit engine activated");
+      }
+      resetHabitForm();
+      setHabitModalOpen(false);
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || "Failed to save habit");
+    } finally {
+      setSavingHabit(false);
     }
-
-    resetHabitForm();
-    setHabitModalOpen(false);
   };
 
   const handleOpenEditHabit = (habit) => {
@@ -191,12 +208,24 @@ export default function Dashboard() {
     setHabitModalOpen(true);
   };
 
+  const handleDeleteHabit = async (id) => {
+    if (confirm("Are you sure you want to delete this habit?")) {
+      try {
+        await deleteHabit(id);
+        toast.success("Habit deleted");
+      } catch (error) {
+        console.error(error);
+        toast.error(error.message || "Failed to delete habit");
+      }
+    }
+  };
+
   const resetHabitForm = () => {
     setEditingHabit(null);
     setHTitle('');
     setHCategory(CATEGORIES[0]);
-    setHTime('08:00 AM');
-    setHLoc('Living Room');
+    setHTime('');
+    setHLoc('');
     setHStack('');
     setHTwoMin('');
     setHPrep('');
@@ -204,26 +233,46 @@ export default function Dashboard() {
     setHIdentityId(identities[0]?.id || '');
   };
 
-  const handleSaveBadHabit = (e) => {
+  const handleSaveBadHabit = async (e) => {
     e.preventDefault();
     if (!bhName.trim() || !bhIdentityId) return;
 
     const targetIdentity = identities.find(i => i.id === bhIdentityId);
-    addBadHabit({
-      identityId: bhIdentityId,
-      identityName: targetIdentity ? targetIdentity.name : 'Unknown Identity',
-      name: bhName,
-      trigger: bhTrigger,
-      invisibleStrategy: bhInvisible,
-      difficultStrategy: bhDifficult
-    });
+    setSavingBadHabit(true);
+    try {
+      await addBadHabit({
+        identityId: bhIdentityId,
+        identityName: targetIdentity ? targetIdentity.name : 'Unknown Identity',
+        name: bhName,
+        trigger: bhTrigger,
+        invisibleStrategy: bhInvisible,
+        difficultStrategy: bhDifficult
+      });
+      toast.success("Anti-habit brakes installed");
+      setBhName('');
+      setBhTrigger('');
+      setBhInvisible('');
+      setBhDifficult('');
+      setBhIdentityId(identities[0]?.id || '');
+      setBadHabitModalOpen(false);
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || "Failed to save anti-habit");
+    } finally {
+      setSavingBadHabit(false);
+    }
+  };
 
-    setBhName('');
-    setBhTrigger('');
-    setBhInvisible('');
-    setBhDifficult('');
-    setBhIdentityId(identities[0]?.id || '');
-    setBadHabitModalOpen(false);
+  const handleDeleteBadHabit = async (id) => {
+    if (confirm("Are you sure you want to delete this anti-habit?")) {
+      try {
+        await deleteBadHabit(id);
+        toast.success("Anti-habit deleted");
+      } catch (error) {
+        console.error(error);
+        toast.error(error.message || "Failed to delete anti-habit");
+      }
+    }
   };
 
   // Environment prep prompt / helper
@@ -249,7 +298,7 @@ export default function Dashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b border-border/40 pb-6">
         <div>
           <h1 className="text-3xl font-bold font-serif text-text leading-tight">
-            Good morning, {currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Explorer'}
+            {greeting}, {currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Explorer'}
           </h1>
           <p className="text-sm text-muted mt-1 font-sans">
             Here is your behavioral voting blueprint for today. Keep voting for your ideal identity.
@@ -267,7 +316,7 @@ export default function Dashboard() {
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
             className="border border-border/80 rounded-lg px-3 py-1 text-sm bg-surface text-text font-mono focus:outline-none focus:ring-2 focus:ring-primary/40"
-            max={new Date().toISOString().split('T')[0]}
+            max={getLocalDateString()}
           />
         </div>
       </div>
@@ -376,6 +425,7 @@ export default function Dashboard() {
             size="sm"
             onClick={() => {
               if (identities.length === 0) {
+                toast("Define an identity card first to anchor your habit system.", { icon: '💡' });
                 setIdentityModalOpen(true);
               } else {
                 resetHabitForm();
@@ -394,6 +444,7 @@ export default function Dashboard() {
             size="sm"
             onClick={() => {
               if (identities.length === 0) {
+                toast("Define an identity card first to anchor your anti-habit.", { icon: '💡' });
                 setIdentityModalOpen(true);
               } else {
                 setBhIdentityId(identities[0].id);
@@ -439,6 +490,7 @@ export default function Dashboard() {
                 .sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
 
               const strength = getIdentityStrength(identity.id);
+              const idLevelProgress = getIdentityLevelProgress(identity.id);
 
               return (
                 <div key={identity.id} className="space-y-4">
@@ -447,6 +499,11 @@ export default function Dashboard() {
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="text-xl font-bold font-serif text-text">{identity.name}</h2>
+                        
+                        <div className="bg-hoverBg border border-border text-primary font-mono font-bold px-2 py-0.5 rounded-full text-[10px] flex items-center">
+                          <Award className="w-3 h-3 mr-1" />
+                          Lvl {idLevelProgress.currentLevel} ({idLevelProgress.currentName})
+                        </div>
                         
                         <div className="flex gap-1 opacity-60 hover:opacity-100 transition-opacity items-center">
                           <button
@@ -457,11 +514,7 @@ export default function Dashboard() {
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onClick={() => {
-                              if (confirm(`Delete identity "${identity.name}" and all linked habits/completions?`)) {
-                                deleteIdentity(identity.id);
-                              }
-                            }}
+                            onClick={() => handleDeleteIdentity(identity.id, identity.name)}
                             className="p-1 text-muted hover:text-primary cursor-pointer transition-colors"
                             title="Delete Identity"
                           >
@@ -474,7 +527,7 @@ export default function Dashboard() {
                         "{identity.beliefStatement || `I am the type of person who is a committed ${identity.name}.`}"
                       </p>
                     </div>
-
+ 
                     {/* Identity Strength Badge */}
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-mono text-muted uppercase tracking-wider">Identity Strength:</span>
@@ -489,7 +542,7 @@ export default function Dashboard() {
                       </span>
                     </div>
                   </div>
-
+ 
                   {/* Habits list */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" id="walkthrough-habits-cards">
                     {idHabits.map(habit => (
@@ -497,13 +550,13 @@ export default function Dashboard() {
                         key={habit.id}
                         habit={habit}
                         onEdit={handleOpenEditHabit}
-                        onDelete={deleteHabit}
+                        onDelete={handleDeleteHabit}
                       />
                     ))}
-
+ 
                     {/* Quick helper to add habit under this identity */}
                     <button
-                      onClick={() => openHabitWithIdentitySeed(identity.id)}
+                       onClick={() => openHabitWithIdentitySeed(identity.id)}
                       className="border border-dashed border-border/80 hover:border-primary/50 hover:bg-hoverBg/20 rounded-xl p-5 flex flex-col justify-center items-center text-center cursor-pointer transition-all h-[155px]"
                     >
                       <Plus className="w-5 h-5 text-muted hover:text-primary mb-1.5" />
@@ -515,7 +568,7 @@ export default function Dashboard() {
               );
             })
           )}
-
+ 
           {/* ANTI-HABITS / BAD HABITS LIST */}
           <div className="space-y-4 pt-6 border-t border-border/20" id="walkthrough-brakes">
             <div className="flex justify-between items-center">
@@ -535,7 +588,7 @@ export default function Dashboard() {
                     <BadHabitCard
                       key={bh.id}
                       badHabit={bh}
-                      onDelete={deleteBadHabit}
+                      onDelete={handleDeleteBadHabit}
                     />
                   ))}
               </div>
@@ -591,7 +644,10 @@ export default function Dashboard() {
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <h4 className="text-xs font-bold text-text truncate">{identity.name}</h4>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-xs font-bold text-text truncate">{identity.name}</h4>
+                          <span className="text-[9px] font-mono font-bold text-primary bg-primary/10 px-1 py-0.2 rounded">Lvl {getIdentityLevelProgress(identity.id).currentLevel}</span>
+                        </div>
                         <p className="text-[10px] text-muted italic truncate">"{identity.beliefStatement}"</p>
                       </div>
                     </div>
@@ -617,7 +673,7 @@ export default function Dashboard() {
                   <div key={bh.id} className="flex justify-between items-center text-xs py-1.5 border-b border-border/20 last:border-0">
                     <span className="font-medium text-text">{bh.name}</span>
                     <span className="font-mono bg-hoverBg text-text font-bold px-2 py-0.5 rounded border border-border/50">
-                      {useHabits().getDaysFree(bh)} Days Free
+                      {getDaysFree(bh)} Days Free
                     </span>
                   </div>
                 ))
@@ -652,6 +708,7 @@ export default function Dashboard() {
               onChange={(e) => setIdName(e.target.value)}
               placeholder="e.g. The Athlete, The Mindful Thinker, The Writer"
               required
+              disabled={savingIdentity}
             />
           </div>
           
@@ -663,6 +720,7 @@ export default function Dashboard() {
               placeholder="e.g. I am the type of person who values physical health and respects my body daily."
               rows={3}
               required
+              disabled={savingIdentity}
             />
             <p className="text-[10px] text-muted">
               James Clear: Focus on the type of person you wish to become. Identity change builds systems.
@@ -673,6 +731,7 @@ export default function Dashboard() {
             <Button 
               type="button" 
               variant="outline" 
+              disabled={savingIdentity}
               onClick={() => {
                 setIdentityModalOpen(false);
                 setEditingIdentity(null);
@@ -682,8 +741,8 @@ export default function Dashboard() {
             >
               Cancel
             </Button>
-            <Button type="submit">
-              {editingIdentity ? "Update Identity" : "Establish Identity"}
+            <Button type="submit" disabled={savingIdentity}>
+              {savingIdentity ? "Saving..." : (editingIdentity ? "Update Identity" : "Establish Identity")}
             </Button>
           </div>
         </form>
@@ -704,31 +763,32 @@ export default function Dashboard() {
                 onChange={(e) => setHTitle(e.target.value)}
                 placeholder="e.g. Morning Squats, Daily Journaling"
                 required
+                disabled={savingHabit}
               />
             </div>
 
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-text uppercase">Link to Identity</label>
-              <Select value={hIdentityId} onChange={(e) => setHIdentityId(e.target.value)} required>
+              <Select value={hIdentityId} onChange={(e) => setHIdentityId(e.target.value)} required disabled={savingHabit}>
                 {identities.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
               </Select>
             </div>
 
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-text uppercase">Category</label>
-              <Select value={hCategory} onChange={(e) => setHCategory(e.target.value)}>
+              <Select value={hCategory} onChange={(e) => setHCategory(e.target.value)} disabled={savingHabit}>
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </Select>
             </div>
 
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-text uppercase">Scheduled Time</label>
-              <Input value={hTime} onChange={(e) => setHTime(e.target.value)} placeholder="07:30 AM" required />
+              <Input value={hTime} onChange={(e) => setHTime(e.target.value)} placeholder="07:30 AM (Optional)" disabled={savingHabit} />
             </div>
 
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-text uppercase">Location</label>
-              <Input value={hLoc} onChange={(e) => setHLoc(e.target.value)} placeholder="Living Room" required />
+              <Input value={hLoc} onChange={(e) => setHLoc(e.target.value)} placeholder="Living Room (Optional)" disabled={savingHabit} />
             </div>
           </div>
 
@@ -744,6 +804,7 @@ export default function Dashboard() {
                 value={hStack}
                 onChange={(e) => setHStack(e.target.value)}
                 placeholder="After I [current habit]... (e.g., drink morning glass of water)"
+                disabled={savingHabit}
               />
             </div>
 
@@ -755,6 +816,7 @@ export default function Dashboard() {
                 value={hPrep}
                 onChange={(e) => setHPrep(e.target.value)}
                 placeholder="To prime space... (e.g., layout mat next to coffee table)"
+                disabled={savingHabit}
               />
             </div>
 
@@ -766,6 +828,7 @@ export default function Dashboard() {
                 value={hTwoMin}
                 onChange={(e) => setHTwoMin(e.target.value)}
                 placeholder="Simplified version... (e.g., do 5 bodyweight squats and 1 plank)"
+                disabled={savingHabit}
               />
             </div>
 
@@ -777,16 +840,17 @@ export default function Dashboard() {
                 value={hReward}
                 onChange={(e) => setHReward(e.target.value)}
                 placeholder="After completion... (e.g., enjoy protein shake)"
+                disabled={savingHabit}
               />
             </div>
           </div>
 
           <div className="flex justify-end gap-2 border-t border-border/20 pt-4 mt-4">
-            <Button type="button" variant="outline" onClick={() => setHabitModalOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setHabitModalOpen(false)} disabled={savingHabit}>
               Cancel
             </Button>
-            <Button type="submit">
-              {editingHabit ? "Update System" : "Activate System"}
+            <Button type="submit" disabled={savingHabit}>
+              {savingHabit ? "Saving..." : (editingHabit ? "Update System" : "Activate System")}
             </Button>
           </div>
         </form>
@@ -807,12 +871,13 @@ export default function Dashboard() {
                 onChange={(e) => setBhName(e.target.value)}
                 placeholder="e.g. Late Night Snacking, Doom Scrolling"
                 required
+                disabled={savingBadHabit}
               />
             </div>
 
             <div className="col-span-2 space-y-1.5">
               <label className="text-xs font-semibold text-text uppercase">Link to Identity</label>
-              <Select value={bhIdentityId} onChange={(e) => setBhIdentityId(e.target.value)} required>
+              <Select value={bhIdentityId} onChange={(e) => setBhIdentityId(e.target.value)} required disabled={savingBadHabit}>
                 {identities.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
               </Select>
             </div>
@@ -828,6 +893,7 @@ export default function Dashboard() {
                 value={bhTrigger}
                 onChange={(e) => setBhTrigger(e.target.value)}
                 placeholder="Visual cue or situation... (e.g. Watching TV late when bored)"
+                disabled={savingBadHabit}
               />
             </div>
 
@@ -837,6 +903,7 @@ export default function Dashboard() {
                 value={bhInvisible}
                 onChange={(e) => setBhInvisible(e.target.value)}
                 placeholder="Hide cue... (e.g. Remove junk food from eye-level pantry shelves)"
+                disabled={savingBadHabit}
               />
             </div>
 
@@ -846,16 +913,17 @@ export default function Dashboard() {
                 value={bhDifficult}
                 onChange={(e) => setBhDifficult(e.target.value)}
                 placeholder="Add obstacles... (e.g. Lock pantry cupboards after 9:00 PM)"
+                disabled={savingBadHabit}
               />
             </div>
           </div>
 
           <div className="flex justify-end gap-2 border-t border-border/20 pt-4 mt-4">
-            <Button type="button" variant="outline" onClick={() => setBadHabitModalOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setBadHabitModalOpen(false)} disabled={savingBadHabit}>
               Cancel
             </Button>
-            <Button id="btn-install-brakes" type="submit">
-              Install Brakes
+            <Button id="btn-install-brakes" type="submit" disabled={savingBadHabit}>
+              {savingBadHabit ? "Installing..." : "Install Brakes"}
             </Button>
           </div>
         </form>

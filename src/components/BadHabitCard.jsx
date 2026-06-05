@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldAlert, RefreshCw, EyeOff, Lock, Trash2, Calendar } from 'lucide-react';
 import { useHabits } from '../context/HabitsContext';
 import { Card, Button, Dialog, Input, Textarea } from './ui/Primitives';
+import toast from 'react-hot-toast';
+import { getLocalDateString } from '../utils/dateUtils';
 
 export default function BadHabitCard({ badHabit, onDelete }) {
   const { getDaysFree, logRelapse } = useHabits();
@@ -11,21 +13,32 @@ export default function BadHabitCard({ badHabit, onDelete }) {
   const [envAdjustment, setEnvAdjustment] = useState('');
   const [dateOverride, setDateOverride] = useState(''); // Allow logging past lapses
   const [showHistory, setShowHistory] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const daysFree = getDaysFree(badHabit);
 
-  const handleSubmitRelapse = (e) => {
+  const handleSubmitRelapse = async (e) => {
     e.preventDefault();
     const date = dateOverride ? new Date(dateOverride).toISOString() : new Date().toISOString();
-    logRelapse(badHabit.id, {
-      triggerDetail,
-      environmentAdjustment: envAdjustment,
-      date
-    });
-    setTriggerDetail('');
-    setEnvAdjustment('');
-    setDateOverride('');
-    setModalOpen(false);
+    
+    setSubmitting(true);
+    try {
+      await logRelapse(badHabit.id, {
+        triggerDetail,
+        environmentAdjustment: envAdjustment,
+        date
+      });
+      toast.success("Relapse logged and brake updated");
+      setTriggerDetail('');
+      setEnvAdjustment('');
+      setDateOverride('');
+      setModalOpen(false);
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || "Failed to log relapse");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -137,7 +150,7 @@ export default function BadHabitCard({ badHabit, onDelete }) {
                 ) : (
                   <div className="space-y-2.5 max-h-40 overflow-y-auto pr-1">
                     {[...badHabit.lapses].reverse().map((lapse, i) => (
-                      <div key={i} className="text-xs p-2 rounded bg-hoverBg/30 border border-border/20 text-left">
+                      <div key={`${lapse.date || ''}_${i}`} className="text-xs p-2 rounded bg-hoverBg/30 border border-border/20 text-left">
                         <div className="flex items-center justify-between text-[10px] text-muted font-mono mb-1">
                           <span className="flex items-center gap-0.5">
                             <Calendar className="w-3 h-3" />
@@ -177,6 +190,7 @@ export default function BadHabitCard({ badHabit, onDelete }) {
               placeholder="Detail the location, visual cue, emotional state, or stack that triggered the slip..."
               required
               rows={3}
+              disabled={submitting}
             />
           </div>
 
@@ -187,6 +201,7 @@ export default function BadHabitCard({ badHabit, onDelete }) {
               onChange={(e) => setEnvAdjustment(e.target.value)}
               placeholder="How can you make this trigger invisible or add an obstacle?"
               required
+              disabled={submitting}
             />
             <p className="text-[10px] text-muted leading-tight">
               E.g., 'Put the phone charger in the hallway' or 'Lock cookie cupboards after 9 PM'. This will update your active Brakes.
@@ -200,17 +215,18 @@ export default function BadHabitCard({ badHabit, onDelete }) {
               value={dateOverride}
               onChange={(e) => setDateOverride(e.target.value)}
               className="text-xs"
-              max={new Date().toISOString().split('T')[0]}
+              max={getLocalDateString()}
+              disabled={submitting}
             />
             <p className="text-[10px] text-muted">Defaults to today if left blank.</p>
           </div>
 
           <div className="flex justify-end gap-2 border-t border-border/20 pt-4 mt-4">
-            <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setModalOpen(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit" variant="forgive">
-              Diagnose & Reset
+            <Button type="submit" variant="forgive" disabled={submitting}>
+              {submitting ? "Submitting..." : "Diagnose & Reset"}
             </Button>
           </div>
         </form>
