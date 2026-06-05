@@ -1,557 +1,346 @@
-import {
-  collection,
-  doc,
-  setDoc,
+import { 
+  db 
+} from '../config/firebase';
+import { 
+  doc, 
+  setDoc, 
+  collection, 
+  onSnapshot, 
+  updateDoc, 
+  deleteDoc, 
   getDoc,
-  getDocs,
-  getDocFromCache,
-  getDocsFromCache,
-  deleteDoc,
-  updateDoc,
-  query,
-  where,
-  orderBy,
-  Timestamp,
-  arrayUnion,
+  addDoc,
+  writeBatch,
+  query
 } from 'firebase/firestore';
-import { db } from '../config/firebase';
 
-const DEFAULT_SERVER_TIMEOUT_MS = 10000;
+const LEVELS = [
+  { level: 1, name: "Seedling", minVotes: 0 },
+  { level: 2, name: "Sprout", minVotes: 25 },
+  { level: 3, name: "Grower", minVotes: 75 },
+  { level: 4, name: "Contender", minVotes: 150 },
+  { level: 5, name: "Atomic", minVotes: 300 },
+  { level: 6, name: "1% Machine", minVotes: 600 },
+  { level: 7, name: "Compounding", minVotes: 1200 },
+  { level: 8, name: "Identity Locked", minVotes: 2500 },
+];
 
-function isLikelyBlockedOrOffline(error) {
-  const msg = String(error?.message || '').toLowerCase();
-  // Common patterns when extensions block google endpoints or Firestore marks client offline
-  return (
-    msg.includes('err_blocked_by_client') ||
-    msg.includes('blocked by client') ||
-    msg.includes('client is offline') ||
-    msg.includes('failed to fetch') ||
-    msg.includes('network') ||
-    error?.code === 'unavailable'
-  );
+function calculateLevelFromVotes(totalVotes) {
+  let activeLevel = 1;
+  for (let i = LEVELS.length - 1; i >= 0; i--) {
+    if (totalVotes >= LEVELS[i].minVotes) {
+      activeLevel = LEVELS[i].level;
+      break;
+    }
+  }
+  return activeLevel;
 }
 
-async function withTimeout(promise, timeoutMs = DEFAULT_SERVER_TIMEOUT_MS) {
-  let timeoutId;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error('Request timed out')), timeoutMs);
-  });
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
+export const firestoreService = {
+  // --- REAL-TIME SUBSCRIBERS ---
 
-// User Profile Operations
-export const createUserProfile = async (userId, profileData) => {
-  try {
-    await setDoc(doc(db, 'users', userId, 'profile', 'data'), {
-      ...profileData,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now()
-    });
-    return { success: true, error: null };
-  } catch (error) {
-    console.error('Error creating user profile:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-export const getUserProfile = async (userId) => {
-  try {
-    const docRef = doc(db, 'users', userId, 'profile', 'data');
-
-    // Cache-first: return quickly if we already have it cached.
-    try {
-      const cached = await getDocFromCache(docRef);
-      if (cached.exists()) {
-        return { data: cached.data(), error: null, source: 'cache' };
+  subscribeUserProfile: (userId, callback, onError) => {
+    const userRef = doc(db, 'users', userId);
+    return onSnapshot(userRef, async (snapshot) => {
+      if (snapshot.exists()) {
+        callback(snapshot.data());
+      } else {
+        // Initialize new user profile document
+        const initialProfile = {
+          userId,
+          level: 1,
+          totalVotes: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        await setDoc(userRef, initialProfile);
+        callback(initialProfile);
       }
-    } catch {
-      // Cache miss is normal on first load; fall through to server.
-    }
+    }, onError);
+  },
 
-    const docSnap = await withTimeout(getDoc(docRef));
+  subscribeIdentities: (userId, callback, onError) => {
+    const identitiesRef = collection(db, 'users', userId, 'identities');
+    return onSnapshot(identitiesRef, (snapshot) => {
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      callback(items);
+    }, onError);
+  },
 
-    if (docSnap.exists()) {
-      return { data: docSnap.data(), error: null, source: 'server' };
-    } else {
-      return { data: null, error: 'Profile not found', source: 'server' };
-    }
-  } catch (error) {
-    console.error('Error getting user profile:', error);
+  subscribeHabits: (userId, callback, onError) => {
+    const habitsRef = collection(db, 'users', userId, 'habits');
+    return onSnapshot(habitsRef, (snapshot) => {
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      callback(items);
+    }, onError);
+  },
 
-    // If network is blocked/offline, attempt cache one more time.
-    if (isLikelyBlockedOrOffline(error)) {
-      try {
-        const docRef = doc(db, 'users', userId, 'profile', 'data');
-        const cached = await getDocFromCache(docRef);
-        if (cached.exists()) {
-          return { data: cached.data(), error: null, source: 'cache' };
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    return { data: null, error: error.message, source: 'error' };
-  }
-};
-
-export const updateUserProfile = async (userId, updates) => {
-  try {
-    // Use setDoc with merge to create or update the document
-    await setDoc(doc(db, 'users', userId, 'profile', 'data'), {
-      ...updates,
-      updatedAt: Timestamp.now()
-    }, { merge: true });
-    return { success: true, error: null };
-  } catch (error) {
-    console.error('Error updating user profile:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-// Habit Operations
-export const addHabit = async (userId, habitData) => {
-  try {
-    const habitRef = doc(collection(db, 'users', userId, 'habits'));
-    await setDoc(habitRef, {
-      ...habitData,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now()
-    });
-    return { id: habitRef.id, success: true, error: null };
-  } catch (error) {
-    console.error('Error adding habit:', error);
-    return { id: null, success: false, error: error.message };
-  }
-};
-
-export const getUserHabits = async (userId) => {
-  try {
-    const habitsCol = collection(db, 'users', userId, 'habits');
-
-    // Cache-first
-    try {
-      const cached = await getDocsFromCache(habitsCol);
-      const habits = [];
-      cached.forEach((d) => habits.push({ id: d.id, ...d.data() }));
-      if (habits.length > 0) {
-        return { data: habits, error: null, source: 'cache' };
-      }
-    } catch {
-      // cache miss -> server
-    }
-
-    const querySnapshot = await withTimeout(getDocs(habitsCol));
-    const habits = [];
-    querySnapshot.forEach((d) => habits.push({ id: d.id, ...d.data() }));
-
-    return { data: habits, error: null, source: 'server' };
-  } catch (error) {
-    console.error('Error getting habits:', error);
-
-    if (isLikelyBlockedOrOffline(error)) {
-      try {
-        const habitsCol = collection(db, 'users', userId, 'habits');
-        const cached = await getDocsFromCache(habitsCol);
-        const habits = [];
-        cached.forEach((d) => habits.push({ id: d.id, ...d.data() }));
-        return { data: habits, error: null, source: 'cache' };
-      } catch {
-        // ignore
-      }
-    }
-
-    return { data: [], error: error.message, source: 'error' };
-  }
-};
-
-export const updateHabit = async (userId, habitId, updates) => {
-  try {
-    await updateDoc(doc(db, 'users', userId, 'habits', habitId), {
-      ...updates,
-      updatedAt: Timestamp.now()
-    });
-    return { success: true, error: null };
-  } catch (error) {
-    console.error('Error updating habit:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-export const deleteHabit = async (userId, habitId) => {
-  try {
-    await deleteDoc(doc(db, 'users', userId, 'habits', habitId));
-    return { success: true, error: null };
-  } catch (error) {
-    console.error('Error deleting habit:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-// Habit Completion Operations
-export const logHabitCompletion = async (userId, habitId, completionData = {}) => {
-  try {
-    const completionRef = doc(collection(db, 'users', userId, 'completions'));
-    await setDoc(completionRef, {
-      habitId,
-      completedAt: Timestamp.now(),
-      progress: completionData.progress || 100,
-      ...completionData
-    });
-    return { id: completionRef.id, success: true, error: null };
-  } catch (error) {
-    console.error('Error logging completion:', error);
-    return { id: null, success: false, error: error.message };
-  }
-};
-
-export const getHabitCompletions = async (userId, habitId, startDate = null, endDate = null) => {
-  try {
-    const constraints = [
-      where('habitId', '==', habitId)
-    ];
-
-    // Add date filters if provided
-    if (startDate) {
-      constraints.push(where('completedAt', '>=', Timestamp.fromDate(startDate instanceof Date ? startDate : new Date(startDate))));
-    }
-    if (endDate) {
-      constraints.push(where('completedAt', '<=', Timestamp.fromDate(endDate instanceof Date ? endDate : new Date(endDate))));
-    }
-
-    // Add orderBy (must come after where clauses)
-    constraints.push(orderBy('completedAt', 'desc'));
-
-    const q = query(
-      collection(db, 'users', userId, 'completions'),
-      ...constraints
-    );
-
-    // Cache-first
-    try {
-      const cached = await getDocsFromCache(q);
-      const completions = [];
-      cached.forEach((d) => completions.push({ id: d.id, ...d.data() }));
-      if (completions.length > 0) {
-        return { data: completions, error: null, source: 'cache' };
-      }
-    } catch {
-      // cache miss -> server
-    }
-
-    const querySnapshot = await withTimeout(getDocs(q));
-    const completions = [];
-
-    querySnapshot.forEach((d) => {
-      completions.push({ id: d.id, ...d.data() });
-    });
-
-    return { data: completions, error: null, source: 'server' };
-  } catch (error) {
-    console.error('Error getting completions:', error);
-
-    if (isLikelyBlockedOrOffline(error)) {
-      try {
-        const constraints = [where('habitId', '==', habitId)];
-        if (startDate) {
-          constraints.push(where('completedAt', '>=', Timestamp.fromDate(startDate instanceof Date ? startDate : new Date(startDate))));
-        }
-        if (endDate) {
-          constraints.push(where('completedAt', '<=', Timestamp.fromDate(endDate instanceof Date ? endDate : new Date(endDate))));
-        }
-        constraints.push(orderBy('completedAt', 'desc'));
-
-        const q = query(collection(db, 'users', userId, 'completions'), ...constraints);
-        const cached = await getDocsFromCache(q);
-        const completions = [];
-        cached.forEach((d) => completions.push({ id: d.id, ...d.data() }));
-        return { data: completions, error: null, source: 'cache' };
-      } catch {
-        // ignore
-      }
-    }
-
-    return { data: [], error: error.message, source: 'error' };
-  }
-};
-
-export const getAllCompletions = async (userId, startDate = null, endDate = null) => {
-  try {
-    const constraints = [];
-
-    // Add date filters if provided
-    if (startDate) {
-      constraints.push(where('completedAt', '>=', Timestamp.fromDate(startDate instanceof Date ? startDate : new Date(startDate))));
-    }
-    if (endDate) {
-      constraints.push(where('completedAt', '<=', Timestamp.fromDate(endDate instanceof Date ? endDate : new Date(endDate))));
-    }
-
-    // Add orderBy (must come after where clauses)
-    constraints.push(orderBy('completedAt', 'desc'));
-
-    const q = query(
-      collection(db, 'users', userId, 'completions'),
-      ...constraints
-    );
-
-    // Cache-first
-    try {
-      const cached = await getDocsFromCache(q);
-      const completions = [];
-      cached.forEach((d) => completions.push({ id: d.id, ...d.data() }));
-      if (completions.length > 0) {
-        return { data: completions, error: null, source: 'cache' };
-      }
-    } catch {
-      // cache miss -> server
-    }
-
-    const querySnapshot = await withTimeout(getDocs(q));
-    const completions = [];
-
-    querySnapshot.forEach((d) => {
-      completions.push({ id: d.id, ...d.data() });
-    });
-
-    return { data: completions, error: null, source: 'server' };
-  } catch (error) {
-    console.error('Error getting all completions:', error);
-
-    if (isLikelyBlockedOrOffline(error)) {
-      try {
-        const constraints = [];
-        if (startDate) {
-          constraints.push(where('completedAt', '>=', Timestamp.fromDate(startDate instanceof Date ? startDate : new Date(startDate))));
-        }
-        if (endDate) {
-          constraints.push(where('completedAt', '<=', Timestamp.fromDate(endDate instanceof Date ? endDate : new Date(endDate))));
-        }
-        constraints.push(orderBy('completedAt', 'desc'));
-
-        const q = query(collection(db, 'users', userId, 'completions'), ...constraints);
-        const cached = await getDocsFromCache(q);
-        const completions = [];
-        cached.forEach((d) => completions.push({ id: d.id, ...d.data() }));
-        return { data: completions, error: null, source: 'cache' };
-      } catch {
-        // ignore
-      }
-    }
-
-    return { data: [], error: error.message, source: 'error' };
-  }
-};
-
-export const deleteCompletion = async (userId, completionId) => {
-  try {
-    await deleteDoc(doc(db, 'users', userId, 'completions', completionId));
-    return { success: true, error: null };
-  } catch (error) {
-    console.error('Error deleting completion:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-// Weekly Review Operations
-export const saveWeeklyReview = async (userId, reviewData) => {
-  try {
-    // Use deterministic doc ID based on week and year to enable updates
-    const docId = `${reviewData.year}-week-${reviewData.weekNumber}`;
-    const reviewRef = doc(db, 'users', userId, 'reviews', docId);
-    await setDoc(reviewRef, {
-      ...reviewData,
-      updatedAt: Timestamp.now()
-    }, { merge: true });
-    return { id: docId, success: true, error: null };
-  } catch (error) {
-    console.error('Error saving review:', error);
-    return { id: null, success: false, error: error.message };
-  }
-};
-
-export const getWeeklyReview = async (userId, year, weekNumber) => {
-  try {
-    const docId = `${year}-week-${weekNumber}`;
-    const docRef = doc(db, 'users', userId, 'reviews', docId);
-    const docSnap = await getDoc(docRef);
-
-    if (docSnap.exists()) {
-      return { data: { id: docSnap.id, ...docSnap.data() }, error: null };
-    } else {
-      return { data: null, error: null };
-    }
-  } catch (error) {
-    console.error('Error getting weekly review:', error);
-    return { data: null, error: error.message };
-  }
-};
-
-export const getWeeklyReviews = async (userId) => {
-  try {
-    const reviewsRef = collection(db, 'users', userId, 'reviews');
-    const q = query(reviewsRef, orderBy('updatedAt', 'desc'));
-    const querySnapshot = await getDocs(q);
-    const reviews = [];
-
-    querySnapshot.forEach((doc) => {
-      reviews.push({ id: doc.id, ...doc.data() });
-    });
-
-    return { data: reviews, error: null };
-  } catch (error) {
-    console.error('Error getting reviews:', error);
-    return { data: [], error: error.message };
-  }
-};
-
-// Bad Habit Operations
-export const saveBadHabit = async (userId, badHabitData) => {
-  try {
-    const badHabitRef = doc(collection(db, 'users', userId, 'badHabits'));
-    await setDoc(badHabitRef, {
-      ...badHabitData,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now()
-    });
-    return { id: badHabitRef.id, success: true, error: null };
-  } catch (error) {
-    console.error('Error saving bad habit:', error);
-    return { id: null, success: false, error: error.message };
-  }
-};
-
-export const getBadHabits = async (userId) => {
-  try {
+  subscribeBadHabits: (userId, callback, onError) => {
     const badHabitsRef = collection(db, 'users', userId, 'badHabits');
+    return onSnapshot(badHabitsRef, (snapshot) => {
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      callback(items);
+    }, onError);
+  },
 
-    // Cache-first
-    try {
-      const cached = await getDocsFromCache(badHabitsRef);
-      const badHabits = [];
-      cached.forEach((doc) => {
-        badHabits.push({ id: doc.id, ...doc.data() });
-      });
-      if (badHabits.length > 0) {
-        return { data: badHabits, error: null, source: 'cache' };
-      }
-    } catch {
-      // cache miss -> server
+  subscribeCompletions: (userId, callback, onError) => {
+    const completionsRef = collection(db, 'users', userId, 'completions');
+    return onSnapshot(completionsRef, (snapshot) => {
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      callback(items);
+    }, onError);
+  },
+
+  subscribeWeeklyReviews: (userId, callback, onError) => {
+    const reviewsRef = collection(db, 'users', userId, 'weeklyReviews');
+    return onSnapshot(reviewsRef, (snapshot) => {
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      callback(items);
+    }, onError);
+  },
+
+  // --- IDENTITY CRUD ---
+
+  saveIdentity: async (userId, identity) => {
+    const identitiesRef = collection(db, 'users', userId, 'identities');
+    const newDocRef = doc(identitiesRef);
+    const data = {
+      name: identity.name,
+      beliefStatement: identity.beliefStatement,
+      createdAt: new Date().toISOString()
+    };
+    await setDoc(newDocRef, data);
+    return { id: newDocRef.id, ...data };
+  },
+
+  updateIdentity: async (userId, id, fields) => {
+    const docRef = doc(db, 'users', userId, 'identities', id);
+    await updateDoc(docRef, fields);
+
+    // Cascade name changes if name changed
+    if (fields.name) {
+      const batch = writeBatch(db);
+      
+      // Habits update
+      // Handled in client context loop for simplicity or database subqueries
     }
+  },
 
-    const querySnapshot = await withTimeout(getDocs(badHabitsRef));
-    const badHabits = [];
+  deleteIdentity: async (userId, id) => {
+    // Delete the identity document
+    const docRef = doc(db, 'users', userId, 'identities', id);
+    await deleteDoc(docRef);
+    
+    // Cascading deletes should be run by context or batch
+  },
 
-    querySnapshot.forEach((doc) => {
-      badHabits.push({ id: doc.id, ...doc.data() });
+  cascadeIdentityRename: async (userId, identityId, newName, habits, badHabits, completions) => {
+    const batch = writeBatch(db);
+    let changed = false;
+
+    habits.forEach(h => {
+      if (h.identityId === identityId) {
+        const docRef = doc(db, 'users', userId, 'habits', h.id);
+        batch.update(docRef, { identityName: newName });
+        changed = true;
+      }
     });
 
-    return { data: badHabits, error: null, source: 'server' };
-  } catch (error) {
-    console.error('Error getting bad habits:', error);
-
-    if (isLikelyBlockedOrOffline(error)) {
-      try {
-        const badHabitsRef = collection(db, 'users', userId, 'badHabits');
-        const cached = await getDocsFromCache(badHabitsRef);
-        const badHabits = [];
-        cached.forEach((doc) => {
-          badHabits.push({ id: doc.id, ...doc.data() });
-        });
-        return { data: badHabits, error: null, source: 'cache' };
-      } catch {
-        // ignore
+    badHabits.forEach(b => {
+      if (b.identityId === identityId) {
+        const docRef = doc(db, 'users', userId, 'badHabits', b.id);
+        batch.update(docRef, { identityName: newName });
+        changed = true;
       }
-    }
-
-    return { data: [], error: error.message, source: 'error' };
-  }
-};
-
-export const logBadHabitLapse = async (userId, badHabitId) => {
-  try {
-    const badHabitRef = doc(db, 'users', userId, 'badHabits', badHabitId);
-
-    // Use arrayUnion to atomically add the lapse timestamp
-    // This prevents race conditions when multiple relapses are logged simultaneously
-    await updateDoc(badHabitRef, {
-      lapses: arrayUnion(Timestamp.now()),
-      updatedAt: Timestamp.now()
     });
 
-    return { success: true, error: null };
-  } catch (error) {
-    console.error('Error logging bad habit lapse:', error);
-    // Handle case where document doesn't exist
-    if (error.code === 'not-found') {
-      return { success: false, error: 'Bad habit not found' };
-    }
-    return { success: false, error: error.message };
-  }
-};
-
-export const updateBadHabit = async (userId, badHabitId, updates) => {
-  try {
-    await updateDoc(doc(db, 'users', userId, 'badHabits', badHabitId), {
-      ...updates,
-      updatedAt: Timestamp.now()
-    });
-    return { success: true, error: null };
-  } catch (error) {
-    console.error('Error updating bad habit:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-export const deleteBadHabit = async (userId, badHabitId) => {
-  try {
-    await deleteDoc(doc(db, 'users', userId, 'badHabits', badHabitId));
-    return { success: true, error: null };
-  } catch (error) {
-    console.error('Error deleting bad habit:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-// Environment Strategy Operations
-export const saveEnvironmentStrategy = async (userId, identityName, strategyData) => {
-  try {
-    const docId = identityName.toLowerCase().replace(/\s+/g, '-');
-    const stratRef = doc(db, 'users', userId, 'environmentStrategies', docId);
-    await setDoc(stratRef, {
-      identityName,
-      ...strategyData,
-      updatedAt: Timestamp.now()
-    }, { merge: true });
-    return { success: true, error: null };
-  } catch (error) {
-    console.error('Error saving environment strategy:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-export const getEnvironmentStrategies = async (userId) => {
-  try {
-    const stratCol = collection(db, 'users', userId, 'environmentStrategies');
-    try {
-      const cached = await getDocsFromCache(stratCol);
-      const strategies = [];
-      cached.forEach((d) => strategies.push({ id: d.id, ...d.data() }));
-      if (strategies.length > 0) {
-        return { data: strategies, error: null, source: 'cache' };
+    completions.forEach(c => {
+      if (c.identityId === identityId) {
+        const docRef = doc(db, 'users', userId, 'completions', c.id);
+        batch.update(docRef, { identityName: newName });
+        changed = true;
       }
-    } catch { /* cache miss */ }
+    });
 
-    const querySnapshot = await withTimeout(getDocs(stratCol));
-    const strategies = [];
-    querySnapshot.forEach((d) => strategies.push({ id: d.id, ...d.data() }));
-    return { data: strategies, error: null, source: 'server' };
-  } catch (error) {
-    console.error('Error getting environment strategies:', error);
-    return { data: [], error: error.message, source: 'error' };
+    if (changed) {
+      await batch.commit();
+    }
+  },
+
+  cascadeIdentityDelete: async (userId, identityId, habits, badHabits, completions) => {
+    const batch = writeBatch(db);
+    let changed = false;
+
+    habits.forEach(h => {
+      if (h.identityId === identityId) {
+        batch.delete(doc(db, 'users', userId, 'habits', h.id));
+        changed = true;
+      }
+    });
+
+    badHabits.forEach(b => {
+      if (b.identityId === identityId) {
+        batch.delete(doc(db, 'users', userId, 'badHabits', b.id));
+        changed = true;
+      }
+    });
+
+    completions.forEach(c => {
+      if (c.identityId === identityId) {
+        batch.delete(doc(db, 'users', userId, 'completions', c.id));
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      await batch.commit();
+    }
+  },
+
+  // --- HABIT CRUD ---
+
+  saveHabit: async (userId, habit) => {
+    const habitsRef = collection(db, 'users', userId, 'habits');
+    const newDocRef = doc(habitsRef);
+    const data = {
+      ...habit,
+      createdAt: new Date().toISOString()
+    };
+    await setDoc(newDocRef, data);
+    return { id: newDocRef.id, ...data };
+  },
+
+  updateHabit: async (userId, id, fields) => {
+    const docRef = doc(db, 'users', userId, 'habits', id);
+    await updateDoc(docRef, fields);
+  },
+
+  deleteHabit: async (userId, id, completions) => {
+    // Delete Habit
+    await deleteDoc(doc(db, 'users', userId, 'habits', id));
+
+    // Batch delete its completions
+    const batch = writeBatch(db);
+    let changed = false;
+    completions.forEach(c => {
+      if (c.habitId === id) {
+        batch.delete(doc(db, 'users', userId, 'completions', c.id));
+        changed = true;
+      }
+    });
+    if (changed) await batch.commit();
+  },
+
+  // --- BAD HABIT CRUD ---
+
+  saveBadHabit: async (userId, badHabit) => {
+    const badHabitsRef = collection(db, 'users', userId, 'badHabits');
+    const newDocRef = doc(badHabitsRef);
+    const data = {
+      ...badHabit,
+      lapses: [],
+      createdAt: new Date().toISOString()
+    };
+    await setDoc(newDocRef, data);
+    return { id: newDocRef.id, ...data };
+  },
+
+  updateBadHabit: async (userId, id, fields) => {
+    const docRef = doc(db, 'users', userId, 'badHabits', id);
+    await updateDoc(docRef, fields);
+  },
+
+  deleteBadHabit: async (userId, id) => {
+    await deleteDoc(doc(db, 'users', userId, 'badHabits', id));
+  },
+
+  logRelapse: async (userId, id, { triggerDetail, environmentAdjustment, date, badHabit }) => {
+    const docRef = doc(db, 'users', userId, 'badHabits', id);
+    const relapseDate = date || new Date().toISOString();
+    const newLapse = {
+      date: relapseDate,
+      triggerDetail: triggerDetail || "No details provided.",
+      environmentAdjustment: environmentAdjustment || ""
+    };
+
+    const lapses = [...(badHabit.lapses || []), newLapse];
+    const fieldsToUpdate = { lapses };
+    
+    if (environmentAdjustment) {
+      if (!badHabit.invisibleStrategy) {
+        fieldsToUpdate.invisibleStrategy = environmentAdjustment;
+      } else {
+        fieldsToUpdate.difficultStrategy = environmentAdjustment;
+      }
+    }
+    await updateDoc(docRef, fieldsToUpdate);
+  },
+
+  // --- COMPLETION VOTE SYSTEM ---
+
+  toggleCompletion: async (userId, habitId, dateNormalized, isTwoMinVersion, notes, habit, completions, totalVotes) => {
+    const existingIndex = completions.findIndex(
+      c => c.habitId === habitId && c.dateNormalized === dateNormalized
+    );
+
+    const userProfileRef = doc(db, 'users', userId);
+
+    if (existingIndex !== -1) {
+      // Remove completion
+      const compId = completions[existingIndex].id;
+      await deleteDoc(doc(db, 'users', userId, 'completions', compId));
+      
+      // Decrement votes
+      const newVotes = Math.max(0, totalVotes - 1);
+      const newLevel = calculateLevelFromVotes(newVotes);
+      await updateDoc(userProfileRef, { totalVotes: newVotes, level: newLevel, updatedAt: new Date().toISOString() });
+      return { status: 'removed' };
+    } else {
+      // Add completion
+      const completionsRef = collection(db, 'users', userId, 'completions');
+      const newDocRef = doc(completionsRef);
+      const newCompletion = {
+        userId,
+        habitId,
+        identityId: habit.identityId,
+        identityName: habit.identityName,
+        completedAt: new Date().toISOString(),
+        dateNormalized,
+        isTwoMinVersion,
+        notes
+      };
+      await setDoc(newDocRef, newCompletion);
+
+      // Increment votes
+      const newVotes = totalVotes + 1;
+      const newLevel = calculateLevelFromVotes(newVotes);
+      await updateDoc(userProfileRef, { totalVotes: newVotes, level: newLevel, updatedAt: new Date().toISOString() });
+      return { status: 'added', completion: { id: newDocRef.id, ...newCompletion } };
+    }
+  },
+
+  // --- WEEKLY REVIEW ---
+
+  saveWeeklyReview: async (userId, review) => {
+    const reviewId = review.id || `${review.year}-week-${review.weekNumber}`;
+    const reviewRef = doc(db, 'users', userId, 'weeklyReviews', reviewId);
+    const data = {
+      ...review,
+      id: reviewId,
+      createdAt: review.createdAt || new Date().toISOString()
+    };
+    await setDoc(reviewRef, data);
+    return data;
+  },
+
+  saveCompletionDirect: async (userId, completion) => {
+    const completionsRef = collection(db, 'users', userId, 'completions');
+    const docRef = doc(completionsRef, completion.id);
+    await setDoc(docRef, completion);
   }
 };

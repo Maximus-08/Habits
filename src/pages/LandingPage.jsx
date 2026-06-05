@@ -1,7 +1,22 @@
-import { Link, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
-import { signInWithGoogle, signUpWithEmail, signInWithEmail, logAnalyticsEvent } from '../config/firebase'
-import { isValidEmail, validatePassword, formatFirebaseError } from '../utils/validation'
+import { Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { signInWithGoogle, signUpWithEmail, signInWithEmail, logAnalyticsEvent } from '../config/firebase';
+import { isValidEmail, validatePassword, formatFirebaseError } from '../utils/validation';
+
+export function HabitsLogo({ className = "w-8 h-8" }) {
+  return (
+    <svg className={className} viewBox="0 0 100 100">
+      <defs>
+        <linearGradient id="gradLogo" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style={{ stopColor: '#DF8559', stopOpacity: 1 }} />
+          <stop offset="100%" style={{ stopColor: '#F5BCA1', stopOpacity: 1 }} />
+        </linearGradient>
+      </defs>
+      <rect width="100" height="100" rx="20" fill="url(#gradLogo)"/>
+      <text x="50" y="70" fontFamily="Arial,sans-serif" fontSize="60" fill="white" textAnchor="middle" fontWeight="bold">∞</text>
+    </svg>
+  );
+}
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -19,7 +34,7 @@ export default function LandingPage() {
       logAnalyticsEvent('login', { method: 'google' });
       navigate('/dashboard');
     } else {
-      const errorCode = authError?.split('(')[1]?.split(')')[0];
+      const errorCode = authError?.split('(')[1]?.split(')')[0] || authError;
       setError(formatFirebaseError(errorCode) || authError);
       logAnalyticsEvent('login_error', { method: 'google', error: errorCode });
     }
@@ -52,21 +67,20 @@ export default function LandingPage() {
       logAnalyticsEvent(isSignUp ? 'sign_up' : 'login', { method: 'email' });
       navigate('/dashboard');
     } else {
-      const errorCode = authError?.split('(')[1]?.split(')')[0];
+      const errorCode = authError?.split('(')[1]?.split(')')[0] || authError;
       setError(formatFirebaseError(errorCode) || authError);
       logAnalyticsEvent(isSignUp ? 'sign_up_error' : 'login_error', { method: 'email', error: errorCode });
     }
     setLoading(false);
   };
+
   return (
-    <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden">
+    <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-bg">
       <header className="sticky top-0 z-50 w-full border-b border-zinc-200/60 bg-white/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-secondary text-white shadow-md shadow-primary/20">
-              <span className="material-symbols-outlined text-[20px] font-bold">all_inclusive</span>
-            </div>
-            <span className="text-lg font-bold tracking-tight text-text-main">AtomicTracker</span>
+            <HabitsLogo className="w-8 h-8 rounded-lg shadow-md" />
+            <span className="text-lg font-bold tracking-tight text-text-main">Habits</span>
           </div>
           <nav className="hidden md:flex items-center gap-8">
           </nav>
@@ -76,7 +90,7 @@ export default function LandingPage() {
                 setIsSignUp(false);
                 document.getElementById('auth-section')?.scrollIntoView({ behavior: 'smooth' });
               }}
-              className="hidden sm:inline-flex h-9 items-center justify-center rounded-lg px-4 text-sm font-medium text-zinc-600 hover:text-text-main hover:bg-zinc-100 transition-colors"
+              className="hidden sm:inline-flex h-9 items-center justify-center rounded-lg px-4 text-sm font-medium text-zinc-600 hover:text-text-main hover:bg-zinc-100 transition-colors cursor-pointer"
             >
               Sign In
             </button>
@@ -85,7 +99,7 @@ export default function LandingPage() {
                 setIsSignUp(true);
                 document.getElementById('auth-section')?.scrollIntoView({ behavior: 'smooth' });
               }}
-              className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-bold text-white shadow-lg shadow-primary/25 hover:bg-primary-hover transition-all transform hover:scale-105"
+              className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-bold text-white shadow-lg shadow-primary/25 hover:bg-primary-hover transition-all transform hover:scale-105 cursor-pointer"
             >
               Get Started
             </button>
@@ -120,30 +134,29 @@ export default function LandingPage() {
                       setIsSignUp(true);
                       document.getElementById('auth-section')?.scrollIntoView({ behavior: 'smooth' });
                     }}
-                    className="inline-flex h-12 items-center justify-center rounded-xl bg-primary px-8 text-base font-bold text-white shadow-lg shadow-primary/30 hover:bg-primary-hover transition-all hover:-translate-y-0.5"
+                    className="inline-flex h-12 items-center justify-center rounded-xl bg-primary px-8 text-base font-bold text-white shadow-lg shadow-primary/30 hover:bg-primary-hover transition-all hover:-translate-y-0.5 cursor-pointer"
                   >
                     Start Your Streak
                     <span className="material-symbols-outlined ml-2 text-[20px]">arrow_forward</span>
                   </button>
                   <button 
                     onClick={() => document.getElementById('philosophy-section')?.scrollIntoView({ behavior: 'smooth' })}
-                    className="inline-flex h-12 items-center justify-center rounded-xl border border-zinc-200 bg-white px-8 text-base font-bold text-text-main shadow-sm hover:bg-zinc-50 hover:border-zinc-300 transition-colors"
+                    className="inline-flex h-12 items-center justify-center rounded-xl border border-zinc-200 bg-white px-8 text-base font-bold text-text-main shadow-sm hover:bg-zinc-50 hover:border-zinc-300 transition-colors cursor-pointer"
                   >
                     Learn the System
                   </button>
                 </div>
-
               </div>
 
               {/* Auth Card */}
               <div id="auth-section" className="relative lg:ml-auto w-full max-w-md lg:max-w-full z-10">
                 <div className="absolute inset-0 -z-10 translate-x-4 translate-y-4 rounded-3xl bg-gradient-to-tr from-secondary/20 to-primary/20 blur-2xl"></div>
-                <div className="glass-panel rounded-2xl overflow-hidden">
+                <div className="glass-panel rounded-2xl overflow-hidden shadow-xl">
                   <div className="border-b border-zinc-100 bg-white/40 p-6">
                     <div className="flex items-end justify-between mb-4">
                       <div>
                         <p className="text-xs font-bold uppercase tracking-wider text-secondary mb-1">Improvement Curve (1 Year)</p>
-                        <h3 className="text-3xl font-bold text-text-main tracking-tight">37.78x</h3>
+                        <h3 className="text-3xl font-bold text-text-main tracking-tight font-sans">37.78x</h3>
                       </div>
                       <div className="text-right">
                         <div className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary border border-primary/20">
@@ -155,19 +168,19 @@ export default function LandingPage() {
                       <svg className="w-full h-full overflow-visible" viewBox="0 0 400 120">
                         <defs>
                           <linearGradient id="curveStroke" x1="0%" x2="100%" y1="0%" y2="0%">
-                            <stop offset="0%" style={{ stopColor: '#2563eb', stopOpacity: 1 }} />
-                            <stop offset="100%" style={{ stopColor: '#10b981', stopOpacity: 1 }} />
+                            <stop offset="0%" style={{ stopColor: '#DF8559', stopOpacity: 1 }} />
+                            <stop offset="100%" style={{ stopColor: '#F5BCA1', stopOpacity: 1 }} />
                           </linearGradient>
                           <linearGradient id="curveFill" x1="0" x2="0" y1="0" y2="1">
-                            <stop offset="0%" stopColor="#10b981" stopOpacity="0.2" />
-                            <stop offset="100%" stopColor="#2563eb" stopOpacity="0" />
+                            <stop offset="0%" stopColor="#DF8559" stopOpacity="0.2" />
+                            <stop offset="100%" stopColor="#F5BCA1" stopOpacity="0" />
                           </linearGradient>
                         </defs>
                         <line className="text-zinc-200" stroke="currentColor" strokeWidth="1" x1="0" x2="400" y1="120" y2="120" />
                         <line className="text-zinc-200" stroke="currentColor" strokeDasharray="4 4" strokeWidth="1" x1="0" x2="400" y1="60" y2="60" />
                         <path className="opacity-50" d="M0 110 C 100 108, 200 100, 300 60 S 400 0, 400 0 V 120 H 0 Z" fill="url(#curveFill)" />
                         <path d="M0 110 C 100 108, 200 100, 300 60 S 400 0, 400 0" fill="none" stroke="url(#curveStroke)" strokeLinecap="round" strokeWidth="4" />
-                        <circle className="shadow-lg shadow-emerald-500/50" cx="400" cy="0" fill="#10b981" r="4" />
+                        <circle className="shadow-lg shadow-primary/50" cx="400" cy="0" fill="#DF8559" r="4" />
                       </svg>
                     </div>
                   </div>
@@ -193,7 +206,7 @@ export default function LandingPage() {
                             <span className="material-symbols-outlined text-zinc-400">mail</span>
                           </div>
                           <input
-                            className="block w-full rounded-xl border-zinc-200 bg-white py-3 pl-10 text-text-main placeholder:text-zinc-400 focus:border-secondary focus:ring-secondary sm:text-sm sm:leading-6 shadow-sm transition-all"
+                            className="block w-full rounded-xl border border-zinc-200 bg-white py-3 pl-10 text-text-main placeholder:text-zinc-400 focus:border-secondary focus:ring-secondary sm:text-sm sm:leading-6 shadow-sm transition-all focus:outline-none"
                             id="email"
                             name="email"
                             placeholder="Email address"
@@ -211,7 +224,7 @@ export default function LandingPage() {
                             <span className="material-symbols-outlined text-zinc-400">lock</span>
                           </div>
                           <input
-                            className="block w-full rounded-xl border-zinc-200 bg-white py-3 pl-10 text-text-main placeholder:text-zinc-400 focus:border-secondary focus:ring-secondary sm:text-sm sm:leading-6 shadow-sm transition-all"
+                            className="block w-full rounded-xl border border-zinc-200 bg-white py-3 pl-10 text-text-main placeholder:text-zinc-400 focus:border-secondary focus:ring-secondary sm:text-sm sm:leading-6 shadow-sm transition-all focus:outline-none"
                             id="password"
                             name="password"
                             placeholder="Password"
@@ -223,7 +236,7 @@ export default function LandingPage() {
                         </div>
                       </div>
                       <button 
-                        className="flex w-full items-center justify-center rounded-xl bg-secondary px-3 py-3.5 text-sm font-bold leading-6 text-white shadow-lg shadow-secondary/30 hover:bg-secondary-hover hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed" 
+                        className="flex w-full items-center justify-center rounded-xl bg-secondary px-3 py-3.5 text-sm font-bold leading-6 text-white shadow-lg shadow-secondary/30 hover:bg-secondary-hover hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer" 
                         type="submit"
                         disabled={loading}
                       >
@@ -244,7 +257,7 @@ export default function LandingPage() {
                       <button
                         onClick={handleGoogleSignIn}
                         disabled={loading}
-                        className="mt-4 flex w-full items-center justify-center gap-3 rounded-xl border border-zinc-200 bg-white px-3 py-3 text-sm font-semibold text-text-main shadow-sm hover:bg-zinc-50 hover:border-zinc-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="mt-4 flex w-full items-center justify-center gap-3 rounded-xl border border-zinc-200 bg-white px-3 py-3 text-sm font-semibold text-text-main shadow-sm hover:bg-zinc-50 hover:border-zinc-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                         type="button"
                       >
                         <svg className="h-5 w-5" viewBox="0 0 24 24">
@@ -260,14 +273,12 @@ export default function LandingPage() {
                     <div className="mt-4 text-center">
                       <button
                         onClick={() => setIsSignUp(!isSignUp)}
-                        className="text-sm text-text-muted hover:text-secondary transition-colors"
+                        className="text-sm text-text-muted hover:text-secondary transition-colors cursor-pointer"
                         type="button"
                       >
                         {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
                       </button>
                     </div>
-
-                    
                   </div>
                 </div>
               </div>
@@ -338,7 +349,7 @@ export default function LandingPage() {
                 <label className="sr-only" htmlFor="identity-input">Identity Input</label>
                 <div className="relative w-full max-w-md">
                   <input
-                    className="block w-full rounded-full border-0 bg-white py-4 pl-8 pr-40 text-text-main shadow-lg ring-1 ring-inset ring-zinc-200 placeholder:text-zinc-400 focus:ring-2 focus:ring-inset focus:ring-secondary sm:text-lg sm:leading-6"
+                    className="block w-full rounded-full border-0 bg-white py-4 pl-8 pr-40 text-text-main shadow-lg ring-1 ring-inset ring-zinc-200 placeholder:text-zinc-400 focus:ring-2 focus:ring-inset focus:ring-secondary sm:text-lg sm:leading-6 focus:outline-none"
                     id="identity-input"
                     placeholder="e.g., A runner, A writer..."
                     type="text"
@@ -349,7 +360,7 @@ export default function LandingPage() {
                         setIsSignUp(true);
                         document.getElementById('auth-section')?.scrollIntoView({ behavior: 'smooth' });
                       }}
-                      className="inline-flex items-center rounded-full bg-secondary px-6 py-2.5 text-sm font-bold text-white shadow-md hover:bg-secondary-hover transition-colors" 
+                      className="inline-flex items-center rounded-full bg-secondary px-6 py-2.5 text-sm font-bold text-white shadow-md hover:bg-secondary-hover transition-colors cursor-pointer" 
                       type="button"
                     >
                       Claim Identity
@@ -362,5 +373,5 @@ export default function LandingPage() {
         </section>
       </main>
     </div>
-  )
+  );
 }

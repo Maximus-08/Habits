@@ -1,316 +1,225 @@
-import { useState, useEffect, useMemo } from 'react'
-import toast from 'react-hot-toast'
-import NavBar from '../components/NavBar'
-import { useAuth } from '../context/AuthContext'
-import { useUser } from '../context/UserContext'
-import * as firestoreService from '../services/firestoreService'
-import { getCurrentWeekNumber, getCurrentWeekDateRange, calculateHabitStreak, calculateGrowthRate } from '../utils/statistics'
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useHabits } from '../context/HabitsContext';
+import { Card, CardHeader, CardTitle, CardContent, Button, Textarea, Slider } from '../components/ui/Primitives';
+import { FileText, ClipboardCheck, AlertCircle, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export default function WeeklyReview() {
-  const { user } = useAuth();
-  const { habits, allCompletions } = useUser();
-  const [reflection, setReflection] = useState({
-    wins: '',
-    challenges: '',
-    learning: '',
-    nextWeek: ''
-  })
+  const navigate = useNavigate();
+  const { weeklyReviews, saveWeeklyReview } = useHabits();
 
-  const [satisfaction, setSatisfaction] = useState(7)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [loadingReview, setLoadingReview] = useState(true)
+  // Determine current year & week number
+  const getWeekNumber = (d) => {
+    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    var yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+    var weekNo = Math.ceil(( ( (d - yearStart) / 86400000) + 1)/7);
+    return weekNo;
+  };
 
-  const weekNumber = getCurrentWeekNumber();
-  const weekDateRange = getCurrentWeekDateRange();
-  const currentYear = new Date().getFullYear();
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentWeekNumber = getWeekNumber(today);
+  const reviewId = `${currentYear}-week-${currentWeekNumber}`;
 
-  // Load existing review for current week
+  const getWeekRange = (year, week) => {
+    const simple = new Date(year, 0, 4);
+    const dayOfWeek = simple.getDay();
+    const ISOweekStart = new Date(simple.setDate(simple.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1)));
+    const start = new Date(ISOweekStart.setDate(ISOweekStart.getDate() + (week - 1) * 7));
+    const end = new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000);
+    const formatDate = (date) => {
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    };
+    return `${formatDate(start)} – ${formatDate(end)}`;
+  };
+
+  // Form states
+  const [satisfaction, setSatisfaction] = useState(7);
+  const [wins, setWins] = useState('');
+  const [challenges, setChallenges] = useState('');
+  const [learning, setLearning] = useState('');
+  const [nextWeek, setNextWeek] = useState('');
+  const [status, setStatus] = useState('draft'); // 'draft' or 'completed'
+
+  // Load existing review if present
   useEffect(() => {
-    const loadExistingReview = async () => {
-      if (!user) {
-        setLoadingReview(false);
-        return;
-      }
+    const existingReview = weeklyReviews.find(r => r.id === reviewId);
+    if (existingReview) {
+      setSatisfaction(existingReview.satisfaction ?? 7);
+      setWins(existingReview.reflection?.wins || '');
+      setChallenges(existingReview.reflection?.challenges || '');
+      setLearning(existingReview.reflection?.learning || '');
+      setNextWeek(existingReview.reflection?.nextWeek || '');
+      setStatus(existingReview.status || 'draft');
+    }
+  }, [weeklyReviews, reviewId]);
 
-      const { data: existingReview } = await firestoreService.getWeeklyReview(user.uid, currentYear, weekNumber);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-      if (existingReview) {
-        setReflection(existingReview.reflection || {
-          wins: '',
-          challenges: '',
-          learning: '',
-          nextWeek: ''
-        });
-        setSatisfaction(existingReview.satisfaction || 7);
-      }
-      setLoadingReview(false);
+    const reviewData = {
+      id: reviewId,
+      userId: "user_default",
+      year: currentYear,
+      weekNumber: currentWeekNumber,
+      satisfaction,
+      reflection: {
+        wins,
+        challenges,
+        learning,
+        nextWeek
+      },
+      status
     };
 
-    loadExistingReview();
-  }, [user, currentYear, weekNumber]);
+    await saveWeeklyReview(reviewData);
 
-  // Calculate real stats
-  const weeklyCompletions = useMemo(() => {
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    return (allCompletions || []).filter(c => {
-      const date = c.completedAt?.toDate?.() || new Date(c.completedAt);
-      return date >= oneWeekAgo;
-    });
-  }, [allCompletions]);
-
-  const completedThisWeek = weeklyCompletions.length;
-  const targetThisWeek = habits.length * 7;
-
-  const bestStreak = useMemo(() => {
-    let maxStreak = 0;
-    habits.forEach(habit => {
-      const habitCompletions = (allCompletions || []).filter(c => c.habitId === habit.id);
-      const { currentStreak } = calculateHabitStreak(habitCompletions);
-      maxStreak = Math.max(maxStreak, currentStreak);
-    });
-    return maxStreak;
-  }, [habits, allCompletions]);
-
-  const weeklyGrowth = useMemo(() => calculateGrowthRate(allCompletions || [], 7), [allCompletions]);
-
-  const handleSaveDraft = async () => {
-    if (!user) return;
-
-    setSaving(true);
-    setSaved(false);
-
-    const { success } = await firestoreService.saveWeeklyReview(user.uid, {
-      weekNumber,
-      year: currentYear,
-      reflection,
-      satisfaction,
-      status: 'draft'
+    const message = status === 'completed' 
+      ? "Weekly review locked in! System updated." 
+      : "Draft saved successfully.";
+    
+    toast.success(message, {
+      style: { background: '#FFFAF3', color: '#4A4036', border: '1px solid #EAE4DD' }
     });
 
-    setSaving(false);
-    if (success) {
-      setSaved(true);
-      toast.success('Draft saved!');
-      setTimeout(() => setSaved(false), 3000);
-    } else {
-      toast.error('Failed to save draft');
-    }
-  };
-
-  const handleCompleteReview = async () => {
-    if (!user) return;
-
-    // Validate that at least one field is filled
-    if (!reflection.wins && !reflection.challenges && !reflection.learning && !reflection.nextWeek) {
-      toast.error('Please fill in at least one reflection field');
-      return;
-    }
-
-    setSaving(true);
-    setSaved(false);
-
-    const { success } = await firestoreService.saveWeeklyReview(user.uid, {
-      weekNumber,
-      year: currentYear,
-      reflection,
-      satisfaction,
-      status: 'completed'
-    });
-
-    setSaving(false);
-    if (success) {
-      setSaved(true);
-      toast.success('Weekly review completed! 🎉');
-    } else {
-      toast.error('Failed to save review');
-    }
+    navigate(status === 'completed' ? '/analytics#reflections' : '/dashboard');
   };
 
   return (
-    <div className="bg-background-light dark:bg-zinc-900 font-display text-zinc-900 antialiased min-h-screen flex flex-col">
-      <NavBar currentPage="review" />
+    <div className="max-w-3xl mx-auto px-4 py-8 select-none">
+      <button
+        onClick={() => navigate('/dashboard')}
+        className="text-xs font-semibold text-muted hover:text-text flex items-center mb-6 transition-colors cursor-pointer"
+      >
+        <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+        Back to Dashboard
+      </button>
 
-      <main className="flex-1 max-w-[1200px] mx-auto w-full px-6 py-10">
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-3">
-            <span className="px-3 py-1 bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider rounded-full border border-primary/20">Week {weekNumber} • {currentYear}</span>
-            <span className="text-zinc-400 text-sm font-medium">{weekDateRange}</span>
-          </div>
-          <h1 className="text-4xl font-black text-zinc-900 mb-3">Weekly System Review</h1>
-          <p className="text-zinc-500 text-lg">Reflect, learn, and adjust your atomic systems.</p>
+      <div className="flex items-center space-x-3 mb-6 border-b border-border/40 pb-5">
+        <FileText className="w-8 h-8 text-primary" />
+        <div>
+          <h1 className="text-3xl font-bold font-serif text-text">Weekly Reflection</h1>
+          <p className="text-sm text-muted mt-1 font-mono">
+            Year {currentYear} • Week {currentWeekNumber} ({getWeekRange(currentYear, currentWeekNumber)})
+          </p>
         </div>
+      </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <StatCard icon="check_circle" label="Completed" value={`${completedThisWeek}/${targetThisWeek || '—'}`} subtitle="Tasks" color="primary" />
-          <StatCard icon="local_fire_department" label="Best Streak" value={bestStreak.toString()} subtitle="Days" color="primary" />
-          <StatCard icon="trending_up" label="Growth" value={`${weeklyGrowth >= 0 ? '+' : ''}${weeklyGrowth}%`} subtitle="vs Last Week" color="secondary" />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-2xl p-6 border border-zinc-200 shadow-soft-blue">
-            <label className="block mb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="material-symbols-outlined text-primary">star</span>
-                <span className="text-lg font-bold text-zinc-900">What Went Well?</span>
+      <Card hoverLift={false} className="border border-border/60 shadow-md">
+        <CardContent className="p-8">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            
+            {/* Warning block about review philosophy */}
+            <div className="bg-bg/50 border border-border/60 p-4 rounded-xl text-xs text-muted flex gap-2.5">
+              <AlertCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+              <div className="leading-relaxed space-y-1">
+                <span className="font-semibold text-text">James Clear's Reflection System:</span>
+                <p>
+                  Reviewing your systems is essential. It's not about measuring flawless performance, but auditing your environment and habits. Where did you slip? How can you make good habits easier and bad habits harder next week?
+                </p>
               </div>
-              <textarea
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-4 min-h-[120px] focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none text-zinc-700 text-sm"
-                placeholder="Celebrate your wins, no matter how small..."
-                value={reflection.wins}
-                onChange={(e) => setReflection({ ...reflection, wins: e.target.value })}
-              />
-            </label>
-          </div>
+            </div>
 
-          <div className="bg-white rounded-2xl p-6 border border-zinc-200 shadow-soft-blue">
-            <label className="block mb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="material-symbols-outlined text-amber-500">flag</span>
-                <span className="text-lg font-bold text-zinc-900">What Was Challenging?</span>
-              </div>
-              <textarea
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-4 min-h-[120px] focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none resize-none text-zinc-700 text-sm"
-                placeholder="Identify obstacles and friction points..."
-                value={reflection.challenges}
-                onChange={(e) => setReflection({ ...reflection, challenges: e.target.value })}
-              />
-            </label>
-          </div>
-
-          <div className="bg-white rounded-2xl p-6 border border-zinc-200 shadow-soft-blue">
-            <label className="block mb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="material-symbols-outlined text-blue-500">lightbulb</span>
-                <span className="text-lg font-bold text-zinc-900">What Did You Learn?</span>
-              </div>
-              <textarea
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-4 min-h-[120px] focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none resize-none text-zinc-700 text-sm"
-                placeholder="Insights and discoveries from this week..."
-                value={reflection.learning}
-                onChange={(e) => setReflection({ ...reflection, learning: e.target.value })}
-              />
-            </label>
-          </div>
-
-          <div className="bg-white rounded-2xl p-6 border border-zinc-200 shadow-soft-blue">
-            <label className="block mb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="material-symbols-outlined text-secondary">rocket_launch</span>
-                <span className="text-lg font-bold text-zinc-900">Next Week's Focus</span>
-              </div>
-              <textarea
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-4 min-h-[120px] focus:ring-2 focus:ring-secondary/20 focus:border-secondary outline-none resize-none text-zinc-700 text-sm"
-                placeholder="What will you adjust or improve?"
-                value={reflection.nextWeek}
-                onChange={(e) => setReflection({ ...reflection, nextWeek: e.target.value })}
-              />
-            </label>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl p-8 border border-zinc-200 shadow-soft-blue mt-6">
-          <div className="flex items-center gap-2 mb-6">
-            <span className="material-symbols-outlined text-primary">mood</span>
-            <span className="text-lg font-bold text-zinc-900">Overall Satisfaction</span>
-          </div>
-          <div className="flex flex-col items-center gap-4">
-            <div className="text-5xl font-black text-primary">{satisfaction}/10</div>
-            <div className="w-full">
-              <style>{`
-                .satisfaction-slider::-webkit-slider-thumb {
-                  -webkit-appearance: none;
-                  appearance: none;
-                  width: 20px;
-                  height: 20px;
-                  background: #2563eb;
-                  border-radius: 50%;
-                  cursor: pointer;
-                  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                }
-                .satisfaction-slider::-moz-range-thumb {
-                  width: 20px;
-                  height: 20px;
-                  background: #2563eb;
-                  border-radius: 50%;
-                  cursor: pointer;
-                  border: none;
-                  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                }
-                .satisfaction-slider::-webkit-slider-runnable-track {
-                  width: 100%;
-                  height: 12px;
-                  cursor: pointer;
-                  border-radius: 9999px;
-                }
-                .satisfaction-slider::-moz-range-track {
-                  width: 100%;
-                  height: 12px;
-                  cursor: pointer;
-                  border-radius: 9999px;
-                }
-              `}</style>
-              <input
-                type="range"
-                min="0"
-                max="10"
+            {/* Satisfaction score slider */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-text uppercase tracking-wider block">
+                How satisfied are you with your systems this week? (0–10)
+              </label>
+              <Slider
                 value={satisfaction}
-                onChange={(e) => setSatisfaction(parseInt(e.target.value))}
-                className="satisfaction-slider w-full h-3 rounded-full cursor-pointer"
-                style={{
-                  background: `linear-gradient(to right, #2563eb 0%, #2563eb ${satisfaction * 10}%, #e4e4e7 ${satisfaction * 10}%, #e4e4e7 100%)`,
-                  WebkitAppearance: 'none',
-                  appearance: 'none'
-                }}
+                onChange={(e) => setSatisfaction(parseInt(e.target.value, 10))}
+                min={0}
+                max={10}
               />
             </div>
-            <div className="flex justify-between w-full text-xs text-zinc-400 font-medium">
-              <span>Not Satisfied</span>
-              <span>Very Satisfied</span>
-            </div>
-          </div>
-        </div>
 
-        <div className="mt-8 flex justify-end gap-4">
-          {saved && (
-            <div className="flex items-center gap-2 text-primary font-medium">
-              <span className="material-symbols-outlined">check_circle</span>
-              <span>Saved successfully!</span>
-            </div>
-          )}
-          <button
-            onClick={handleSaveDraft}
-            disabled={saving}
-            className="px-6 py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? 'Saving...' : 'Save Draft'}
-          </button>
-          <button
-            onClick={handleCompleteReview}
-            disabled={saving}
-            className="px-6 py-3 bg-primary hover:bg-primary-hover text-white font-bold rounded-xl shadow-lg shadow-primary/30 hover:-translate-y-0.5 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span className="material-symbols-outlined">check</span>
-            {saving ? 'Saving...' : 'Complete Review'}
-          </button>
-        </div>
-      </main>
-    </div>
-  )
-}
+            {/* The 4 Reflection blocks */}
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-text uppercase tracking-wider block">
+                  1. What were your wins? (What worked in your systems?)
+                </label>
+                <Textarea
+                  value={wins}
+                  onChange={(e) => setWins(e.target.value)}
+                  placeholder="E.g., Did 5 workouts, the cue of laying out the exercise mat worked perfectly..."
+                  rows={3}
+                  required
+                />
+              </div>
 
-function StatCard({ icon, label, value, subtitle, color }) {
-  return (
-    <div className="bg-white rounded-2xl p-6 border border-zinc-200 shadow-soft flex flex-col gap-2">
-      <div className={`w-12 h-12 rounded-xl ${color === 'primary' ? 'bg-primary/10 text-primary' : 'bg-secondary/10 text-secondary'} flex items-center justify-center mb-2`}>
-        <span className="material-symbols-outlined">{icon}</span>
-      </div>
-      <p className="text-3xl font-black text-zinc-900">{value}</p>
-      <div className="flex items-center gap-2">
-        <p className="text-sm font-bold text-zinc-700">{label}</p>
-        <span className="text-xs text-zinc-400">{subtitle}</span>
-      </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-text uppercase tracking-wider block">
+                  2. What challenges did you face? (Where did you drift?)
+                </label>
+                <Textarea
+                  value={challenges}
+                  onChange={(e) => setChallenges(e.target.value)}
+                  placeholder="E.g., Felt too lazy to write on Thursday, stayed up late scrolling phone in bed on Friday..."
+                  rows={3}
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-text uppercase tracking-wider block">
+                  3. What did you learn this week?
+                </label>
+                <Textarea
+                  value={learning}
+                  onChange={(e) => setLearning(e.target.value)}
+                  placeholder="E.g., Phone screen cue in bedroom is too strong. Must move charger to kitchen corridor..."
+                  rows={3}
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-text uppercase tracking-wider block">
+                  4. What will you focus on next week? (Environment refinements)
+                </label>
+                <Textarea
+                  value={nextWeek}
+                  onChange={(e) => setNextWeek(e.target.value)}
+                  placeholder="E.g., Keep snacks locked in safe, enforce brush-teeth rule at 9:00 PM..."
+                  rows={3}
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Toggle Draft vs Complete */}
+            <div className="flex items-center gap-4 border-t border-border/25 pt-5 mt-6">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="mark-complete"
+                  checked={status === 'completed'}
+                  onChange={(e) => setStatus(e.target.checked ? 'completed' : 'draft')}
+                  className="w-4 w-4 text-primary rounded border-border focus:ring-primary accent-primary cursor-pointer"
+                />
+                <label htmlFor="mark-complete" className="text-xs font-semibold text-text uppercase tracking-wide cursor-pointer">
+                  Mark Review as Complete (Lock reflection)
+                </label>
+              </div>
+            </div>
+
+            {/* Form actions */}
+            <div className="flex items-center justify-end gap-2 border-t border-border/20 pt-4">
+              <Button type="button" variant="outline" onClick={() => navigate('/dashboard')}>
+                Cancel
+              </Button>
+              <Button type="submit">
+                <ClipboardCheck className="w-4 h-4 mr-2" />
+                {status === 'completed' ? "Lock Review" : "Save Draft"}
+              </Button>
+            </div>
+
+          </form>
+        </CardContent>
+      </Card>
     </div>
-  )
+  );
 }

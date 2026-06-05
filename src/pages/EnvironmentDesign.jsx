@@ -1,445 +1,313 @@
-import { useState, useEffect, useMemo } from 'react'
-import toast from 'react-hot-toast'
-import NavBar from '../components/NavBar'
-import { useUser } from '../context/UserContext'
-import { useAuth } from '../context/AuthContext'
-import * as firestoreService from '../services/firestoreService'
-
-const IDENTITY_ICONS = {
-    'The Athlete': 'directions_run',
-    'The Developer': 'code',
-    'The Writer': 'edit',
-    'The Reader': 'book',
-    'The Meditator': 'self_improvement',
-}
-
-function getIdentityIcon(name) {
-    return IDENTITY_ICONS[name] || 'person'
-}
-
-function getIdentityColor(index) {
-    const colors = [
-        { bg: 'bg-blue-100 dark:bg-blue-900/40', text: 'text-blue-600 dark:text-blue-400' },
-        { bg: 'bg-purple-100 dark:bg-purple-900/40', text: 'text-purple-600 dark:text-purple-400' },
-        { bg: 'bg-amber-100 dark:bg-amber-900/40', text: 'text-amber-600 dark:text-amber-400' },
-        { bg: 'bg-emerald-100 dark:bg-emerald-900/40', text: 'text-emerald-600 dark:text-emerald-400' },
-        { bg: 'bg-rose-100 dark:bg-rose-900/40', text: 'text-rose-600 dark:text-rose-400' },
-    ]
-    return colors[index % colors.length]
-}
+import React, { useState } from 'react';
+import { useHabits } from '../context/HabitsContext';
+import { Card, CardHeader, CardTitle, CardContent, Button, Input, Select } from '../components/ui/Primitives';
+import { Compass, Flame, ShieldAlert, Save, RefreshCw, EyeOff, Lock, Sparkles } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export default function EnvironmentDesign() {
-    const { user } = useAuth()
-    const { habits, identity } = useUser()
-    const [badHabits, setBadHabits] = useState([])
+  const { 
+    identities, 
+    habits, 
+    badHabits, 
+    updateHabit, 
+    updateBadHabit 
+  } = useHabits();
 
-    // Build identities from habits + bad habits + current identity
-    const identities = useMemo(() => {
-        const identitySet = new Set()
-        identitySet.add(identity || 'The Athlete')
-        habits.forEach(h => {
-            if (h.identityName) identitySet.add(h.identityName)
-        })
-        badHabits.forEach(h => {
-            if (h.identityName) identitySet.add(h.identityName)
-        })
-        return Array.from(identitySet)
-    }, [habits, badHabits, identity])
+  const [activeIdentityId, setActiveIdentityId] = useState(identities[0]?.id || 'all');
+  
+  // Track inputs locally during editing
+  const [editedPreps, setEditedPreps] = useState({});
+  const [editedBrakes, setEditedBrakes] = useState({});
+  const [coachLoading, setCoachLoading] = useState({});
 
-    const [selectedIdentity, setSelectedIdentity] = useState(null)
-    const [strategies, setStrategies] = useState({}) // { identityName: { engines: [...], brakes: [...] } }
-    const [loading, setLoading] = useState(false)
+  // Get filtered lists
+  const filteredHabits = activeIdentityId === 'all'
+    ? habits
+    : habits.filter(h => h.identityId === activeIdentityId);
 
-    // Set default selected identity
-    useEffect(() => {
-        if (identities.length > 0 && !selectedIdentity) {
-            setSelectedIdentity(identities[0])
-        }
-    }, [identities, selectedIdentity])
+  const filteredBadHabits = activeIdentityId === 'all'
+    ? badHabits
+    : badHabits.filter(bh => bh.identityId === activeIdentityId);
 
-    // Load strategies from Firestore
-    useEffect(() => {
-        if (user) {
-            loadStrategies()
-            loadBadHabits()
-        }
-    }, [user])
+  // Engines handlers (good habits space prep)
+  const handlePrepChange = (habitId, value) => {
+    setEditedPreps(prev => ({ ...prev, [habitId]: value }));
+  };
 
+  const handleSavePrep = (habitId) => {
+    const newVal = editedPreps[habitId];
+    if (newVal === undefined) return;
+    
+    updateHabit(habitId, { environmentPrep: newVal });
+    toast.success("Good habit Engine strategy locked!", {
+      style: { background: '#FFFAF3', color: '#4A4036', border: '1px solid #EAE4DD' }
+    });
+  };
 
+  // Brakes handlers (bad habits friction rules)
+  const handleBrakesChange = (badHabitId, field, value) => {
+    setEditedBrakes(prev => ({
+      ...prev,
+      [badHabitId]: {
+        ...(prev[badHabitId] || {}),
+        [field]: value
+      }
+    }));
+  };
 
-    const loadBadHabits = async () => {
-        if (!user) return
-        const { data } = await firestoreService.getBadHabits(user.uid)
-        setBadHabits(data || [])
-    }
+  const handleSaveBrakes = (badHabitId) => {
+    const changes = editedBrakes[badHabitId];
+    if (!changes) return;
 
-    const loadStrategies = async () => {
-        if (!user) return
-        setLoading(true)
-        const { data } = await firestoreService.getEnvironmentStrategies(user.uid)
-        if (data && data.length > 0) {
-            const mapped = {}
-            data.forEach(s => {
-                mapped[s.identityName] = {
-                    engines: s.engines || [],
-                    brakes: s.brakes || [],
-                }
-            })
-            setStrategies(mapped)
-        }
-        setLoading(false)
-    }
+    updateBadHabit(badHabitId, changes);
+    toast.success("Bad habit Brakes strategy locked!", {
+      style: { background: '#FFFAF3', color: '#4A4036', border: '1px solid #EAE4DD' }
+    });
+  };
 
-    // Get habits and bad habits for selected identity
-    const identityHabits = useMemo(() => {
-        return habits.filter(h => {
-            const habitIdentity = h.identityName || identity
-            return habitIdentity === selectedIdentity
-        })
-    }, [habits, identity, selectedIdentity])
-
-    const identityBadHabits = useMemo(() => {
-        return badHabits.filter(h => (h.identityName || identity) === selectedIdentity)
-    }, [badHabits, identity, selectedIdentity])
-
-    // Prefill strategies from existing habits/bad habits if strategy is empty
-    useEffect(() => {
-        if (!selectedIdentity) return
-        setStrategies(prev => {
-            const existing = prev[selectedIdentity] || { engines: [], brakes: [] }
-            if (existing.engines.length > 0 || existing.brakes.length > 0) return prev
-
-            const engines = identityHabits.map(h => ({
-                habitTitle: h.title || '',
-                icon: 'fitness_center',
-                schedule: [h.category, h.time].filter(Boolean).join(' • '),
-                strategy: ''
-            }))
-            const brakes = identityBadHabits.map(h => ({
-                habitTitle: h.name || '',
-                icon: 'block',
-                schedule: '',
-                strategy: ''
-            }))
-
-            if (engines.length === 0 && brakes.length === 0) return prev
-            return { ...prev, [selectedIdentity]: { engines, brakes } }
-        })
-    }, [selectedIdentity, identityHabits, identityBadHabits])
-
-    // Get strategies for current identity
-    const currentStrategies = useMemo(() => {
-        return strategies[selectedIdentity] || { engines: [], brakes: [] }
-    }, [strategies, selectedIdentity])
-
-    const updateEngineStrategy = (index, field, value) => {
-        setStrategies(prev => {
-            const current = prev[selectedIdentity] || { engines: [], brakes: [] }
-            const engines = [...current.engines]
-            engines[index] = { ...engines[index], [field]: value }
-            return { ...prev, [selectedIdentity]: { ...current, engines } }
-        })
-    }
-
-    const updateBrakeStrategy = (index, field, value) => {
-        setStrategies(prev => {
-            const current = prev[selectedIdentity] || { engines: [], brakes: [] }
-            const brakes = [...current.brakes]
-            brakes[index] = { ...brakes[index], [field]: value }
-            return { ...prev, [selectedIdentity]: { ...current, brakes } }
-        })
-    }
-
-    const addEngine = () => {
-        setStrategies(prev => {
-            const current = prev[selectedIdentity] || { engines: [], brakes: [] }
-            return {
-                ...prev,
-                [selectedIdentity]: {
-                    ...current,
-                    engines: [...current.engines, { habitTitle: '', icon: 'fitness_center', schedule: '', strategy: '' }]
-                }
-            }
-        })
-    }
-
-    const addBrake = () => {
-        setStrategies(prev => {
-            const current = prev[selectedIdentity] || { engines: [], brakes: [] }
-            return {
-                ...prev,
-                [selectedIdentity]: {
-                    ...current,
-                    brakes: [...current.brakes, { habitTitle: '', icon: 'block', schedule: '', strategy: '' }]
-                }
-            }
-        })
-    }
-
-    const removeEngine = (index) => {
-        setStrategies(prev => {
-            const current = prev[selectedIdentity] || { engines: [], brakes: [] }
-            const engines = current.engines.filter((_, i) => i !== index)
-            return { ...prev, [selectedIdentity]: { ...current, engines } }
-        })
-    }
-
-    const removeBrake = (index) => {
-        setStrategies(prev => {
-            const current = prev[selectedIdentity] || { engines: [], brakes: [] }
-            const brakes = current.brakes.filter((_, i) => i !== index)
-            return { ...prev, [selectedIdentity]: { ...current, brakes } }
-        })
-    }
-
-    const handleSave = async () => {
-        if (!user || !selectedIdentity) return
-        setLoading(true)
-        const data = strategies[selectedIdentity] || { engines: [], brakes: [] }
-        const { success } = await firestoreService.saveEnvironmentStrategy(user.uid, selectedIdentity, data)
-        if (success) {
-            toast.success('Environment design saved!')
+  // Environment Coach heuristics
+  const handleAskCoach = (type, targetId, habitName) => {
+    setCoachLoading(prev => ({ ...prev, [targetId]: true }));
+    
+    setTimeout(() => {
+      let suggestion = "";
+      const hName = habitName.toLowerCase();
+      
+      if (type === 'engine') {
+        if (hName.includes('exercise') || hName.includes('workout') || hName.includes('gym')) {
+          suggestion = "Unroll exercise mat in living room and stack workout clothes directly on coffee table.";
+        } else if (hName.includes('write') || hName.includes('journal') || hName.includes('study')) {
+          suggestion = "Place open notebook, pilot pen, and glasses on empty desk. Turn laptop completely off.";
+        } else if (hName.includes('read') || hName.includes('book')) {
+          suggestion = "Put bookmark-opened book on pillow. Remove charging cords from sleeping area.";
+        } else if (hName.includes('meditat') || hName.includes('breath') || hName.includes('yoga')) {
+          suggestion = "Place clean cushion in center of quiet bedroom corner with an ambient candle.";
         } else {
-            toast.error('Failed to save')
+          suggestion = `Set out materials for ${habitName} in clear sight before your stacked routine trigger occurs.`;
         }
-        setLoading(false)
-    }
-
-    const handleSaveBlur = async (identityName) => {
-        if (!user || !identityName) return
-        const data = strategies[identityName] || { engines: [], brakes: [] }
-        const { success } = await firestoreService.saveEnvironmentStrategy(user.uid, identityName, data)
-        if (success) {
-            toast.success('Saved!', { duration: 1500 })
+        setEditedPreps(prev => ({ ...prev, [targetId]: suggestion }));
+      } else {
+        // bad habit brakes suggestions
+        let invisible = "";
+        let difficult = "";
+        if (hName.includes('snack') || hName.includes('food') || hName.includes('sugar') || hName.includes('cookie')) {
+          invisible = "Move cookie jars and chocolates into top pantry cabinets inside opaque boxes.";
+          difficult = "Lock pantry cupboards after 9 PM. Put keys in hallway drawer.";
+        } else if (hName.includes('scroll') || hName.includes('phone') || hName.includes('social') || hName.includes('screen')) {
+          invisible = "Store mobile charger in kitchen. Keep phone out of bedtime bedroom.";
+          difficult = "Turn off phone completely at 9:30 PM and set router to auto-shutoff.";
+        } else if (hName.includes('tv') || hName.includes('netflix') || hName.includes('show') || hName.includes('game')) {
+          invisible = "Put TV remote inside a closed drawer or wardrobe under sheets.";
+          difficult = "Unplug TV power supply from plug point after turning it off.";
+        } else {
+          invisible = "Keep trigger cues inside drawers, boxes, or other rooms.";
+          difficult = "Establish a friction obstacle or commitment device requiring 2+ minutes to reverse.";
         }
-    }
+        setEditedBrakes(prev => ({
+          ...prev,
+          [targetId]: { invisibleStrategy: invisible, difficultStrategy: difficult }
+        }));
+      }
 
-    return (
-        <div className="bg-background-light text-zinc-900 min-h-screen flex flex-col font-display">
-            <NavBar currentPage="environment-design" />
+      setCoachLoading(prev => ({ ...prev, [targetId]: false }));
+      toast.success("Coach recommendations loaded!", {
+        style: { background: '#FFFAF3', color: '#4A4036', border: '1px solid #EAE4DD' }
+      });
+    }, 900);
+  };
 
-            <main className="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 py-12">
-                {/* Header */}
-                <div className="flex flex-col gap-2 w-full text-center mb-10">
-                    <h2 className="text-3xl md:text-4xl font-extrabold text-zinc-900 tracking-tight">
-                        Identity Environment Strategist
-                    </h2>
-                    <p className="text-zinc-500 max-w-2xl mx-auto">
-                        Design your environment to reduce friction for who you want to be, and increase friction for who you used to be.
-                    </p>
-                </div>
-
-                {/* Identity Tabs */}
-                <div className="flex justify-center mb-12">
-                    <div className="inline-flex bg-white p-1 rounded-full border border-zinc-200 shadow-sm flex-wrap gap-1 justify-center">
-                        <button
-                            onClick={() => setSelectedIdentity(null)}
-                            className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all ${selectedIdentity === null
-                                    ? 'bg-zinc-900 text-white shadow-sm'
-                                    : 'text-zinc-500 hover:text-zinc-900'
-                                }`}
-                        >
-                            All Identities
-                        </button>
-                        {identities.map((id, idx) => (
-                            <button
-                                key={id}
-                                onClick={() => setSelectedIdentity(id)}
-                                className={`px-5 py-2.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${selectedIdentity === id
-                                        ? 'bg-zinc-900 text-white shadow-sm'
-                                        : 'text-zinc-500 hover:text-zinc-900'
-                                    }`}
-                            >
-                                <span className="material-symbols-outlined text-base">{getIdentityIcon(id)}</span>
-                                {id}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Identity Sections */}
-                {(selectedIdentity ? [selectedIdentity] : identities).map((identityName, identityIdx) => {
-                    const strats = strategies[identityName] || { engines: [], brakes: [] }
-                    const color = getIdentityColor(identityIdx)
-
-                    return (
-                        <section key={identityName} className="mb-16">
-                            {/* Identity Header */}
-                            <div className="flex items-center gap-4 mb-8">
-                                <div className={`h-10 w-10 ${color.bg} rounded-xl flex items-center justify-center ${color.text} shadow-sm`}>
-                                    <span className="material-symbols-outlined text-xl">{getIdentityIcon(identityName)}</span>
-                                </div>
-                                <h3 className="text-2xl font-bold text-zinc-900">Identity: {identityName}</h3>
-                                <div className="h-px bg-zinc-200 flex-grow"></div>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                                {/* ENGINE Column — Friction Reduction */}
-                                <div className="space-y-5">
-                                    <div className="flex items-center justify-between px-1">
-                                        <div className="flex items-center gap-2 text-primary">
-                                            <span className="material-symbols-outlined text-xl">bolt</span>
-                                            <h4 className="font-bold text-xs uppercase tracking-widest">THE ENGINE</h4>
-                                        </div>
-                                        <span className="text-xs font-medium text-zinc-400">Environment: Friction Reduction</span>
-                                    </div>
-
-                                    {strats.engines.map((engine, idx) => (
-                                        <div key={idx} className="bg-white rounded-2xl p-6 border-l-[6px] border-l-primary shadow-sm border border-zinc-200 group relative">
-                                            <button
-                                                onClick={() => removeEngine(idx)}
-                                                className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-zinc-300 hover:text-red-500 transition-all"
-                                            >
-                                                <span className="material-symbols-outlined text-lg">close</span>
-                                            </button>
-                                            <div className="flex items-center gap-4 mb-5">
-                                                <div className="h-10 w-10 rounded-xl bg-emerald-50 flex items-center justify-center text-primary">
-                                                    <span className="material-symbols-outlined text-xl">{engine.icon || 'fitness_center'}</span>
-                                                </div>
-                                                <div className="flex-1">
-                                                    <input
-                                                        className="w-full font-bold text-zinc-900 text-base bg-transparent border-none outline-none placeholder-zinc-300"
-                                                        placeholder="Habit name..."
-                                                        value={engine.habitTitle || ''}
-                                                        onChange={(e) => updateEngineStrategy(idx, 'habitTitle', e.target.value)}
-                                                        onBlur={() => handleSaveBlur(identityName)}
-                                                    />
-                                                    <input
-                                                        className="w-full text-[11px] text-zinc-500 font-medium bg-transparent border-none outline-none placeholder-zinc-300 mt-0.5"
-                                                        placeholder="Schedule (e.g. Every day at 6:00 AM)"
-                                                        value={engine.schedule || ''}
-                                                        onChange={(e) => updateEngineStrategy(idx, 'schedule', e.target.value)}
-                                                        onBlur={() => handleSaveBlur(identityName)}
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="space-y-2">
-                                                <p className="text-xs text-zinc-500 font-medium">
-                                                    How will you design your environment to make this easy?
-                                                </p>
-                                                <div className="relative">
-                                                    <input
-                                                        className="w-full bg-zinc-50 border-none rounded-lg py-3.5 pl-4 pr-10 text-sm text-zinc-900 placeholder-zinc-400 focus:ring-1 focus:ring-primary outline-none"
-                                                        type="text"
-                                                        placeholder="e.g. Set out running clothes on the chair next to bed..."
-                                                        value={engine.strategy || ''}
-                                                        onChange={(e) => updateEngineStrategy(idx, 'strategy', e.target.value)}
-                                                        onBlur={() => handleSaveBlur(identityName)}
-                                                    />
-                                                    <span className={`material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-sm ${engine.strategy ? 'text-primary' : 'text-zinc-300'
-                                                        }`}>
-                                                        {engine.strategy ? 'check' : 'save'}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-
-                                    {/* Add Engine card */}
-                                    <button
-                                        onClick={addEngine}
-                                        className="w-full h-[140px] border-2 border-dashed border-zinc-200 rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer hover:bg-zinc-50 transition-colors group"
-                                    >
-                                        <div className="h-10 w-10 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400 group-hover:text-primary group-hover:bg-primary/10 transition-colors">
-                                            <span className="material-symbols-outlined">add</span>
-                                        </div>
-                                        <span className="text-sm font-medium text-zinc-500 group-hover:text-primary transition-colors">
-                                            Add a new habit engine
-                                        </span>
-                                    </button>
-                                </div>
-
-                                {/* BRAKES Column — Friction Addition */}
-                                <div className="space-y-5">
-                                    <div className="flex items-center justify-between px-1">
-                                        <div className="flex items-center gap-2 text-coral">
-                                            <span className="material-symbols-outlined text-xl">pan_tool</span>
-                                            <h4 className="font-bold text-xs uppercase tracking-widest">THE BRAKES</h4>
-                                        </div>
-                                        <span className="text-xs font-medium text-zinc-400">Environment: Friction Addition</span>
-                                    </div>
-
-                                    {strats.brakes.map((brake, idx) => (
-                                        <div key={idx} className="bg-white rounded-2xl p-6 border-l-[6px] border-l-coral shadow-sm border border-zinc-200 group relative">
-                                            <button
-                                                onClick={() => removeBrake(idx)}
-                                                className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-zinc-300 hover:text-red-500 transition-all"
-                                            >
-                                                <span className="material-symbols-outlined text-lg">close</span>
-                                            </button>
-                                            <div className="flex items-center gap-4 mb-5">
-                                                <div className="h-10 w-10 rounded-xl bg-red-50 flex items-center justify-center text-coral">
-                                                    <span className="material-symbols-outlined text-xl">{brake.icon || 'block'}</span>
-                                                </div>
-                                                <div className="flex-1">
-                                                    <input
-                                                        className="w-full font-bold text-zinc-900 text-base bg-transparent border-none outline-none placeholder-zinc-300"
-                                                        placeholder="Bad habit name..."
-                                                        value={brake.habitTitle || ''}
-                                                        onChange={(e) => updateBrakeStrategy(idx, 'habitTitle', e.target.value)}
-                                                        onBlur={() => handleSaveBlur(identityName)}
-                                                    />
-                                                    <input
-                                                        className="w-full text-[11px] text-zinc-500 font-medium bg-transparent border-none outline-none placeholder-zinc-300 mt-0.5"
-                                                        placeholder="e.g. Avoid after 9 PM"
-                                                        value={brake.schedule || ''}
-                                                        onChange={(e) => updateBrakeStrategy(idx, 'schedule', e.target.value)}
-                                                        onBlur={() => handleSaveBlur(identityName)}
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="space-y-2">
-                                                <p className="text-xs text-zinc-500 font-medium">
-                                                    How will you design your environment to make this hard?
-                                                </p>
-                                                <div className="relative">
-                                                    <input
-                                                        className="w-full bg-zinc-50 border-none rounded-lg py-3.5 pl-4 pr-10 text-sm text-zinc-900 placeholder-zinc-400 focus:ring-1 focus:ring-coral outline-none"
-                                                        type="text"
-                                                        placeholder="e.g. Put a 'Kitchen Closed' sign on the fridge..."
-                                                        value={brake.strategy || ''}
-                                                        onChange={(e) => updateBrakeStrategy(idx, 'strategy', e.target.value)}
-                                                        onBlur={() => handleSaveBlur(identityName)}
-                                                    />
-                                                    <span className={`material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-sm ${brake.strategy ? 'text-coral' : 'text-zinc-300'
-                                                        }`}>
-                                                        {brake.strategy ? 'check' : 'save'}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-
-                                    {/* Add Brake card */}
-                                    <button
-                                        onClick={addBrake}
-                                        className="w-full h-[140px] border-2 border-dashed border-zinc-200 rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer hover:bg-red-50/50 transition-colors group"
-                                    >
-                                        <div className="h-10 w-10 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400 group-hover:text-coral group-hover:bg-coral-light transition-colors">
-                                            <span className="material-symbols-outlined">add</span>
-                                        </div>
-                                        <span className="text-sm font-medium text-zinc-500 group-hover:text-coral transition-colors">
-                                            Identify another blocker
-                                        </span>
-                                    </button>
-                                </div>
-                            </div>
-                        </section>
-                    )
-                })}
-
-                {/* Save Button */}
-                <div className="mt-8 flex justify-center">
-                    <button
-                        onClick={handleSave}
-                        disabled={loading}
-                        className="bg-secondary hover:bg-secondary-hover text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-blue-500/25 transition-all flex items-center gap-3 disabled:opacity-50 hover:-translate-y-0.5 active:scale-95"
-                    >
-                        <span className="material-symbols-outlined">save</span>
-                        {loading ? 'Saving...' : 'Commit to Environment Design'}
-                    </button>
-                </div>
-            </main>
+  return (
+    <div className="max-w-7xl mx-auto px-4 py-8 select-none">
+      <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-border/40 pb-6 mb-8 gap-4">
+        <div>
+          <h1 className="text-3xl font-bold font-serif text-text">Environment Architect</h1>
+          <p className="text-sm text-muted mt-1">
+            "Environment is the invisible hand that shapes human behavior." Prime your cues and install brakes.
+          </p>
         </div>
-    )
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs uppercase font-mono tracking-widest text-muted">Focus:</span>
+          <Select 
+            value={activeIdentityId} 
+            onChange={(e) => setActiveIdentityId(e.target.value)}
+            className="w-48 text-xs font-semibold"
+          >
+            <option value="all">All Identities</option>
+            {identities.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        {/* LEFT COLUMN: THE ENGINES (Good Habits Prep) */}
+        <div className="space-y-6">
+          <div className="flex items-center space-x-2 border-b border-success/30 pb-3">
+            <Flame className="w-5 h-5 text-success" />
+            <h2 className="text-xl font-bold font-serif text-text">The Engines (Good Habits Cues)</h2>
+          </div>
+          
+          <div className="bg-success/5 border border-success/15 p-4 rounded-xl text-xs text-text leading-relaxed">
+            <span className="font-bold text-success">3rd Law: Make it Easy.</span> Reduce friction to make good habits obvious. Set out gym gear, keep guitar in middle of room, or place book on pillow. Prime your environment.
+          </div>
+
+          {filteredHabits.length === 0 ? (
+            <p className="text-sm text-muted italic text-center py-10">No good habits defined for this identity.</p>
+          ) : (
+            filteredHabits.map(habit => {
+              const currentPrep = editedPreps[habit.id] !== undefined ? editedPreps[habit.id] : (habit.environmentPrep || '');
+              const isEdited = editedPreps[habit.id] !== undefined && editedPreps[habit.id] !== (habit.environmentPrep || '');
+
+              return (
+                <Card key={habit.id} hoverLift={false} className="border border-border/60">
+                  <CardHeader className="py-3 flex flex-row items-center justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-mono tracking-wider text-success bg-success/10 px-2 py-0.5 rounded">
+                        {habit.identityName}
+                      </span>
+                      <CardTitle className="text-base font-bold text-text mt-1">{habit.title}</CardTitle>
+                    </div>
+
+                    <button
+                      onClick={() => handleAskCoach('engine', habit.id, habit.title)}
+                      disabled={coachLoading[habit.id]}
+                      className="text-[10px] font-semibold text-primary border border-primary/20 bg-hoverBg hover:bg-hoverBg/80 px-2 py-0.8 rounded cursor-pointer"
+                    >
+                      {coachLoading[habit.id] ? "Loading..." : "✨ Ask Coach"}
+                    </button>
+                  </CardHeader>
+                  
+                  <CardContent className="space-y-4">
+                    {habit.stackedHabit && (
+                      <p className="text-xs text-muted italic leading-relaxed">
+                        <span className="font-semibold text-text">Anchor Trigger: </span>
+                        "{habit.stackedHabit}..."
+                      </p>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] uppercase font-mono tracking-widest text-text font-bold">Space Preparation Strategy</label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={currentPrep}
+                          onChange={(e) => handlePrepChange(habit.id, e.target.value)}
+                          placeholder="e.g. Lay out shoes by bed, place notebook open on desk..."
+                          className="flex-1 text-xs"
+                        />
+                        <Button
+                          size="sm"
+                          variant={isEdited ? "default" : "outline"}
+                          disabled={!isEdited}
+                          onClick={() => handleSavePrep(habit.id)}
+                          className="h-10 text-xs px-3"
+                        >
+                          <Save className="w-3.5 h-3.5 mr-1" />
+                          Lock
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
+        </div>
+
+        {/* RIGHT COLUMN: THE BRAKES (Bad Habits Impediments) */}
+        <div className="space-y-6">
+          <div className="flex items-center space-x-2 border-b border-primary/30 pb-3">
+            <ShieldAlert className="w-5 h-5 text-primary" />
+            <h2 className="text-xl font-bold font-serif text-text">The Brakes (Anti-Habits Friction)</h2>
+          </div>
+
+          <div className="bg-primary/5 border border-primary/15 p-4 rounded-xl text-xs text-text leading-relaxed">
+            <span className="font-bold text-primary">3rd Law Inversion: Make it Difficult.</span> Increase friction to make bad habits unreachable. Leave charger in hallway, lock cupboard, block domains. Build obstacles.
+          </div>
+
+          {filteredBadHabits.length === 0 ? (
+            <p className="text-sm text-muted italic text-center py-10">No anti-habits defined for this identity.</p>
+          ) : (
+            filteredBadHabits.map(bh => {
+              const localChanges = editedBrakes[bh.id] || {};
+              const currentInvisible = localChanges.invisibleStrategy !== undefined ? localChanges.invisibleStrategy : (bh.invisibleStrategy || '');
+              const currentDifficult = localChanges.difficultStrategy !== undefined ? localChanges.difficultStrategy : (bh.difficultStrategy || '');
+              
+              const isEdited = localChanges.invisibleStrategy !== undefined && localChanges.invisibleStrategy !== (bh.invisibleStrategy || '') ||
+                               localChanges.difficultStrategy !== undefined && localChanges.difficultStrategy !== (bh.difficultStrategy || '');
+
+              return (
+                <Card key={bh.id} hoverLift={false} className="border border-border/60">
+                  <CardHeader className="py-3 flex flex-row items-center justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-mono tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded">
+                        {bh.identityName}
+                      </span>
+                      <CardTitle className="text-base font-bold text-text mt-1">{bh.name}</CardTitle>
+                    </div>
+
+                    <button
+                      onClick={() => handleAskCoach('brake', bh.id, bh.name)}
+                      disabled={coachLoading[bh.id]}
+                      className="text-[10px] font-semibold text-primary border border-primary/20 bg-hoverBg hover:bg-hoverBg/80 px-2 py-0.8 rounded cursor-pointer"
+                    >
+                      {coachLoading[bh.id] ? "Loading..." : "✨ Ask Coach"}
+                    </button>
+                  </CardHeader>
+                  
+                  <CardContent className="space-y-4">
+                    {bh.trigger && (
+                      <p className="text-xs text-muted leading-relaxed">
+                        <span className="font-semibold text-text">Trigger: </span>
+                        "{bh.trigger}"
+                      </p>
+                    )}
+
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-mono tracking-widest text-text font-bold flex items-center gap-1">
+                          <EyeOff className="w-3 h-3 text-primary" /> Make it Invisible
+                        </label>
+                        <Input
+                          value={currentInvisible}
+                          onChange={(e) => handleBrakesChange(bh.id, 'invisibleStrategy', e.target.value)}
+                          placeholder="e.g. Put junk food in highest pantry opaque drawer..."
+                          className="text-xs"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-mono tracking-widest text-text font-bold flex items-center gap-1">
+                          <Lock className="w-3 h-3 text-primary" /> Make it Difficult (Commitment Device)
+                        </label>
+                        <Input
+                          value={currentDifficult}
+                          onChange={(e) => handleBrakesChange(bh.id, 'difficultStrategy', e.target.value)}
+                          placeholder="e.g. Lock snacks. Lock phone charger in pantry kitchen..."
+                          className="text-xs"
+                        />
+                      </div>
+
+                      <div className="flex justify-end pt-1">
+                        <Button
+                          size="sm"
+                          disabled={!isEdited}
+                          onClick={() => handleSaveBrakes(bh.id)}
+                          className="text-xs px-4"
+                        >
+                          <Save className="w-3.5 h-3.5 mr-1" />
+                          Save Friction Settings
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
 }

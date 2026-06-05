@@ -1,413 +1,867 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
-import NavBar from '../components/NavBar'
-import HabitCard from '../components/HabitCard'
-import Heatmap from '../components/Heatmap'
-import { useUser } from '../context/UserContext'
-import { useAuth } from '../context/AuthContext'
-import { isHabitCompletedToday, normalizeDate } from '../utils/dateHelpers'
-import { logAnalyticsEvent } from '../config/firebase'
-import * as firestoreService from '../services/firestoreService'
-import {
-  calculateHabitStreak,
-  calculateIdentityVotes,
-  calculateUserLevel,
-  calculateVotesForNextLevel,
-  getHeatmapData,
-  getCurrentWeekNumber,
-  getCurrentWeekDateRange,
-  getWeekDateRange
-} from '../utils/statistics'
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Plus, Sparkles, BookOpen, AlertCircle, Calendar, ArrowRight,
+  TrendingUp, Activity, Award, ShieldAlert, FileText, Settings, UserPlus, HelpCircle,
+  Edit2, Trash2
+} from 'lucide-react';
+import { RadialBarChart, RadialBar, ResponsiveContainer } from 'recharts';
+import { useHabits, LEVELS } from '../context/HabitsContext';
+import HabitCard from '../components/HabitCard';
+import BadHabitCard from '../components/BadHabitCard';
+import Heatmap from '../components/Heatmap';
+import InteractiveGuide from '../components/InteractiveGuide';
+import { Button, Card, CardHeader, CardTitle, CardContent, Dialog, Input, Textarea, Select } from '../components/ui/Primitives';
+
+const CATEGORIES = ["Physical Health", "Mind & Creativity", "Work & Finance", "Relationships & Social", "Personal Growth"];
 
 export default function Dashboard() {
-  const { identity, setIdentity, habits, toggleHabitComplete, deleteHabit, allCompletions } = useUser();
-  const { user } = useAuth();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const {
+    currentUser,
+    userProfile,
+    identities,
+    habits,
+    badHabits,
+    completions,
+    weeklyReviews,
+    selectedDate,
+    setSelectedDate,
+    addIdentity,
+    updateIdentity,
+    deleteIdentity,
+    addHabit,
+    updateHabit,
+    deleteHabit,
+    addBadHabit,
+    deleteBadHabit,
+    getIdentityStrength,
+    getLevelProgress
+  } = useHabits();
 
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  // Guide force start state
+  const [guideForceStart, setGuideForceStart] = useState(false);
+  const location = useLocation();
 
-  // Bad habits state
-  const [badHabits, setBadHabits] = useState([]);
-  const [loadingBadHabits, setLoadingBadHabits] = useState(false);
-
-  // Log page view
   useEffect(() => {
-    logAnalyticsEvent('page_view', { page_name: 'dashboard' });
-  }, []);
-
-  // Load bad habits
-  useEffect(() => {
-    if (user) {
-      loadBadHabits();
+    const params = new URLSearchParams(location.search);
+    if (params.get('tutorial') === 'true') {
+      setGuideForceStart(true);
+      navigate('/dashboard', { replace: true });
     }
-  }, [user]);
+  }, [location, navigate]);
 
-  const loadBadHabits = async () => {
-    if (!user) return;
-    setLoadingBadHabits(true);
-    const { data } = await firestoreService.getBadHabits(user.uid);
-    setBadHabits(data || []);
-    setLoadingBadHabits(false);
+  // Dialog states
+  const [identityModalOpen, setIdentityModalOpen] = useState(false);
+  const [habitModalOpen, setHabitModalOpen] = useState(false);
+  const [badHabitModalOpen, setBadHabitModalOpen] = useState(false);
+  
+  // Edit targets
+  const [editingHabit, setEditingHabit] = useState(null);
+  const [editingIdentity, setEditingIdentity] = useState(null);
+
+  // Identity Form State
+  const [idName, setIdName] = useState('');
+  const [idBelief, setIdBelief] = useState('');
+
+  // Habit Form State
+  const [hTitle, setHTitle] = useState('');
+  const [hCategory, setHCategory] = useState(CATEGORIES[0]);
+  const [hTime, setHTime] = useState('08:00 AM');
+  const [hLoc, setHLoc] = useState('Living Room');
+  const [hStack, setHStack] = useState('');
+  const [hTwoMin, setHTwoMin] = useState('');
+  const [hPrep, setHPrep] = useState('');
+  const [hReward, setHReward] = useState('');
+  const [hIdentityId, setHIdentityId] = useState('');
+
+  // Bad Habit Form State
+  const [bhName, setBhName] = useState('');
+  const [bhTrigger, setBhTrigger] = useState('');
+  const [bhInvisible, setBhInvisible] = useState('');
+  const [bhDifficult, setBhDifficult] = useState('');
+  const [bhIdentityId, setBhIdentityId] = useState('');
+
+  // Active identity filtering (default: All)
+  const [filterIdentityId, setFilterIdentityId] = useState('all');
+
+  // Time-of-day parsing helper for chronological sorting
+  const timeToMinutes = (timeStr) => {
+    if (!timeStr) return 9999;
+    const cleanTime = timeStr.trim().toUpperCase();
+    const parts = cleanTime.match(/(\d+):(\d+)\s*(AM|PM)/);
+    if (!parts) return 9999;
+    let hours = parseInt(parts[1], 10);
+    const minutes = parseInt(parts[2], 10);
+    const ampm = parts[3];
+    
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+    
+    return hours * 60 + minutes;
   };
 
+  // Week number helper
+  const getWeekNumber = (d) => {
+    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    var yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+    var weekNo = Math.ceil(( ( (d - yearStart) / 86400000) + 1)/7);
+    return weekNo;
+  };
 
-  const identityOptions = useMemo(() => {
-    const identitySet = new Set();
-    if (identity) identitySet.add(identity);
-    habits.forEach(h => { if (h.identityName) identitySet.add(h.identityName); });
-    badHabits.forEach(h => { if (h.identityName) identitySet.add(h.identityName); });
-    return Array.from(identitySet);
-  }, [identity, habits, badHabits]);
-  // Calculate real statistics
-  const totalVotes = useMemo(() => calculateIdentityVotes(allCompletions), [allCompletions]);
-  const userLevel = useMemo(() => calculateUserLevel(totalVotes), [totalVotes]);
-  const levelProgress = useMemo(() => calculateVotesForNextLevel(totalVotes), [totalVotes]);
-  const heatmapData = useMemo(() => getHeatmapData(allCompletions || []), [allCompletions]);
-  const weekNumber = getCurrentWeekNumber();
-  const viewingDateRange = useMemo(() => getWeekDateRange(selectedDate), [selectedDate]);
+  // Check if current week's manual review is completed (for reminder banner on Fri/Sat/Sun)
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0 is Sunday, 5 is Friday, 6 is Saturday
+  const isReviewDay = dayOfWeek === 5 || dayOfWeek === 6 || dayOfWeek === 0;
+  const currentYear = today.getFullYear();
+  const currentWeekNum = getWeekNumber(today);
+  const isReviewCompleted = weeklyReviews.some(
+    r => r.year === currentYear && r.weekNumber === currentWeekNum && r.status === 'completed'
+  );
+  const showReviewReminder = isReviewDay && !isReviewCompleted;
 
-  // Check if viewing current week
-  const isViewingCurrentWeek = useMemo(() => {
-    const today = new Date();
-    const todayWeekStart = new Date(today);
-    todayWeekStart.setDate(todayWeekStart.getDate() - todayWeekStart.getDay());
-    todayWeekStart.setHours(0, 0, 0, 0);
+  // Level Progression Math
+  const levelProgress = getLevelProgress();
 
-    const selectedWeekStart = new Date(selectedDate);
-    selectedWeekStart.setDate(selectedWeekStart.getDate() - selectedWeekStart.getDay());
-    selectedWeekStart.setHours(0, 0, 0, 0);
+  // CRUD actions handlers
+  const handleSaveIdentity = (e) => {
+    e.preventDefault();
+    if (!idName.trim()) return;
+    
+    if (editingIdentity) {
+      updateIdentity(editingIdentity.id, { name: idName, beliefStatement: idBelief });
+    } else {
+      addIdentity(idName, idBelief || `I am the type of person who is a committed ${idName}.`);
+    }
 
-    return todayWeekStart.getTime() === selectedWeekStart.getTime();
-  }, [selectedDate]);
+    setIdName('');
+    setIdBelief('');
+    setEditingIdentity(null);
+    setIdentityModalOpen(false);
+  };
 
-  // Filter completions based on selected date range
-  const filteredCompletions = useMemo(() => {
-    if (!allCompletions) return [];
-    const weekStart = new Date(selectedDate);
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-    weekStart.setHours(0, 0, 0, 0);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 7);
+  const handleOpenEditIdentity = (identity) => {
+    setEditingIdentity(identity);
+    setIdName(identity.name);
+    setIdBelief(identity.beliefStatement || '');
+    setIdentityModalOpen(true);
+  };
 
-    return allCompletions.filter(c => {
-      const date = normalizeDate(c.completedAt);
-      return date && date >= weekStart && date < weekEnd;
+  const handleSaveHabit = (e) => {
+    e.preventDefault();
+    if (!hTitle.trim() || !hIdentityId) return;
+
+    const targetIdentity = identities.find(i => i.id === hIdentityId);
+    const habitData = {
+      identityId: hIdentityId,
+      identityName: targetIdentity ? targetIdentity.name : 'Unknown Identity',
+      title: hTitle,
+      category: hCategory,
+      time: hTime,
+      location: hLoc,
+      stackedHabit: hStack,
+      twoMinRule: hTwoMin,
+      environmentPrep: hPrep,
+      immediateReward: hReward
+    };
+
+    if (editingHabit) {
+      updateHabit(editingHabit.id, habitData);
+    } else {
+      addHabit(habitData);
+    }
+
+    resetHabitForm();
+    setHabitModalOpen(false);
+  };
+
+  const handleOpenEditHabit = (habit) => {
+    setEditingHabit(habit);
+    setHTitle(habit.title);
+    setHCategory(habit.category);
+    setHTime(habit.time);
+    setHLoc(habit.location);
+    setHStack(habit.stackedHabit || '');
+    setHTwoMin(habit.twoMinRule || '');
+    setHPrep(habit.environmentPrep || '');
+    setHReward(habit.immediateReward || '');
+    setHIdentityId(habit.identityId);
+    setHabitModalOpen(true);
+  };
+
+  const resetHabitForm = () => {
+    setEditingHabit(null);
+    setHTitle('');
+    setHCategory(CATEGORIES[0]);
+    setHTime('08:00 AM');
+    setHLoc('Living Room');
+    setHStack('');
+    setHTwoMin('');
+    setHPrep('');
+    setHReward('');
+    setHIdentityId(identities[0]?.id || '');
+  };
+
+  const handleSaveBadHabit = (e) => {
+    e.preventDefault();
+    if (!bhName.trim() || !bhIdentityId) return;
+
+    const targetIdentity = identities.find(i => i.id === bhIdentityId);
+    addBadHabit({
+      identityId: bhIdentityId,
+      identityName: targetIdentity ? targetIdentity.name : 'Unknown Identity',
+      name: bhName,
+      trigger: bhTrigger,
+      invisibleStrategy: bhInvisible,
+      difficultStrategy: bhDifficult
     });
-  }, [allCompletions, selectedDate]);
 
-  // Filter habits for current identity
-  const currentIdentityHabits = useMemo(() => {
-    if (!identity) return habits; // Should ideally always have identity
-    return habits.filter(h => h.identityName === identity || !h.identityName); // Fallback for legacy
-  }, [habits, identity]);
-
-
-  // Calculate streaks for each habit (for passing props)
-  const getHabitStreakData = (habitId) => {
-    const habitCompletions = (allCompletions || []).filter(c => c.habitId === habitId);
-    return calculateHabitStreak(habitCompletions);
+    setBhName('');
+    setBhTrigger('');
+    setBhInvisible('');
+    setBhDifficult('');
+    setBhIdentityId(identities[0]?.id || '');
+    setBadHabitModalOpen(false);
   };
 
-  // Calculate days free for a bad habit
-  const getDaysFree = (badHabit) => {
-    const lapses = badHabit.lapses || [];
-    if (lapses.length === 0) {
-      const createdAt = badHabit.createdAt?.toDate?.() || new Date(badHabit.createdAt);
-      const diffTime = Date.now() - createdAt.getTime();
-      return Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    }
-    const lastLapse = lapses[lapses.length - 1];
-    const lapseDate = lastLapse?.toDate?.() || new Date(lastLapse);
-    const diffTime = Date.now() - lapseDate.getTime();
-    return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  // Environment prep prompt / helper
+  const openHabitWithIdentitySeed = (identityId) => {
+    resetHabitForm();
+    setHIdentityId(identityId);
+    setHabitModalOpen(true);
   };
 
-  // Handle edit — navigate to Identity Log
-  const handleEditHabit = (habit) => {
-    navigate(`/identity?edit=${habit.id}`);
+  const openBadHabitWithIdentitySeed = (identityId) => {
+    setBhIdentityId(identityId);
+    setBadHabitModalOpen(true);
   };
 
-  const handleLogRelapse = async (badHabitId) => {
-    if (!confirm('Are you sure you want to log a relapse? This will reset your current streak.')) return;
-
-    // Optimistic update
-    setBadHabits(prev => prev.map(bh => {
-      if (bh.id === badHabitId) {
-        return {
-          ...bh,
-          lapses: [...(bh.lapses || []), new Date()]
-        };
-      }
-      return bh;
-    }));
-
-    const result = await firestoreService.logBadHabitLapse(user.uid, badHabitId);
-    if (!result.success) {
-      alert('Failed to log relapse. Please try again.');
-      loadBadHabits(); // Revert on failure
-    }
-  };
+  // Filtered lists
+  const filteredIdentities = filterIdentityId === 'all'
+    ? identities
+    : identities.filter(i => i.id === filterIdentityId);
 
   return (
-    <div className="bg-background-light text-zinc-900 min-h-screen flex flex-col">
-      <NavBar currentPage="dashboard" />
+    <div className="max-w-7xl mx-auto px-4 py-8 select-none">
+      {/* 1. Header Greeting Section */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b border-border/40 pb-6">
+        <div>
+          <h1 className="text-3xl font-bold font-serif text-text leading-tight">
+            Good morning, {currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Explorer'}
+          </h1>
+          <p className="text-sm text-muted mt-1 font-sans">
+            Here is your behavioral voting blueprint for today. Keep voting for your ideal identity.
+          </p>
+        </div>
 
-      <main className="flex-grow w-full max-w-7xl mx-auto px-6 py-8 flex flex-col gap-10">
-        {/* Header Section */}
-        <section className="flex flex-col md:flex-row justify-between items-end md:items-center gap-6">
-          <div className="flex flex-col gap-2 max-w-3xl">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide">
-                Current Focus
-              </span>
-              <span className="text-slate-400 text-xs">• Week {weekNumber}</span>
+        {/* Date picker */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-mono font-bold uppercase tracking-wider text-muted flex items-center gap-1 bg-hoverBg px-2.5 py-1.5 rounded-lg border border-border/50">
+            <Calendar className="w-3.5 h-3.5 text-primary" />
+            Active Logging:
+          </span>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="border border-border/80 rounded-lg px-3 py-1 text-sm bg-surface text-text font-mono focus:outline-none focus:ring-2 focus:ring-primary/40"
+            max={new Date().toISOString().split('T')[0]}
+          />
+        </div>
+      </div>
+
+      {/* 2. Level Progress Tally */}
+      <Card hoverLift={false} className="mb-8 border border-border/60" id="walkthrough-level">
+        <div className="p-6">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-3">
+            <div className="flex items-center space-x-3">
+              <div className="bg-hoverBg border border-border text-primary font-mono font-bold px-3 py-1 rounded-full text-xs flex items-center">
+                <Award className="w-3.5 h-3.5 mr-1" />
+                Level {levelProgress.currentLevel}
+              </div>
+              <h2 className="text-xl font-bold font-serif text-text">
+                {levelProgress.currentName}
+              </h2>
             </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 leading-tight">
-                Identity: {identity}
-              </h1>
-              {identityOptions.length > 1 && (
-                <select
-                  value={identity || ''}
-                  onChange={(e) => setIdentity(e.target.value)}
-                  className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-700"
-                >
-                  {identityOptions.map((identityName) => (
-                    <option key={identityName} value={identityName}>{identityName}</option>
-                  ))}
-                </select>
+            
+            <div className="text-sm font-mono text-muted text-right">
+              {userProfile.totalVotes || 0} <span className="font-sans text-[11px]">Total Votes Cast</span>
+              {levelProgress.nextLevel && (
+                <span className="block text-[11px] text-primary mt-0.5">
+                  {levelProgress.votesRemaining} votes left for Level {levelProgress.nextLevel} ({levelProgress.nextName})
+                </span>
               )}
             </div>
-            <p className="text-slate-500 mt-2 text-lg">
-              "Every action you take is a vote for the type of person you wish to become."
+          </div>
+          
+          {/* Level slider bar */}
+          <div className="relative">
+            <div className="h-3 w-full bg-[#F2ECE4] rounded-full overflow-hidden border border-border/40">
+              <motion.div
+                className="h-full bg-success rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${levelProgress.progressPercent}%` }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+              />
+            </div>
+            <div className="flex justify-between text-[10px] font-mono text-muted mt-1 px-1">
+              <span>{levelProgress.minVotes} v</span>
+              <span>{levelProgress.maxVotes ? `${levelProgress.maxVotes} v` : "Max"}</span>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* 3. Review Alert Banner */}
+      <AnimatePresence>
+        {showReviewReminder && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="mb-8 bg-hoverBg border border-primary/30 p-4 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+            id="walkthrough-review-reminder"
+          >
+            <div className="flex items-start gap-3">
+              <FileText className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-serif font-semibold text-text text-sm">Weekly reflection is open</h3>
+                <p className="text-xs text-muted mt-0.5">
+                  Review your systems, reflect on challenges, and redesign your environmental engines and brakes.
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => navigate('/review')}
+              className="text-xs shrink-0 self-end md:self-center"
+            >
+              <span>Begin Reflection</span>
+              <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 4. Filter Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-2">
+          <span className="text-xs uppercase font-mono tracking-widest text-muted">Focus Identity:</span>
+          <Select
+            value={filterIdentityId}
+            onChange={(e) => setFilterIdentityId(e.target.value)}
+            className="h-9 py-1 w-44 text-xs font-semibold"
+          >
+            <option value="all">All Identities</option>
+            {identities.map(i => (
+              <option key={i.id} value={i.id}>{i.name}</option>
+            ))}
+          </Select>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIdentityModalOpen(true)}
+            className="text-xs"
+          >
+            <UserPlus className="w-3.5 h-3.5 mr-1.5 text-primary" />
+            Define Identity
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={() => {
+              if (identities.length === 0) {
+                setIdentityModalOpen(true);
+              } else {
+                resetHabitForm();
+                setHIdentityId(identities[0].id);
+                setHabitModalOpen(true);
+              }
+            }}
+            className="text-xs"
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            Add Habit System
+          </Button>
+
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              if (identities.length === 0) {
+                setIdentityModalOpen(true);
+              } else {
+                setBhIdentityId(identities[0].id);
+                setBadHabitModalOpen(true);
+              }
+            }}
+            className="text-xs"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 mr-1.5 text-primary" />
+            Add Anti-Habit
+          </Button>
+        </div>
+      </div>
+
+      {/* 5. Main Dashboard Split Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* LEFT COLUMN: Habit lists (65%) */}
+        <div className="lg:col-span-2 space-y-8" id="walkthrough-identities">
+          
+          {filteredIdentities.length === 0 ? (
+            <Card className="text-center p-12 border border-dashed border-border">
+              <CardContent className="space-y-4">
+                <div className="text-center flex justify-center text-muted">
+                  <Sparkles className="w-12 h-12" />
+                </div>
+                <h3 className="text-lg font-serif font-bold text-text">No identities defined yet</h3>
+                <p className="text-sm text-muted max-w-sm mx-auto">
+                  According to James Clear, behavior change starts with identity. Create your first identity architect card now.
+                </p>
+                <Button onClick={() => setIdentityModalOpen(true)}>
+                  <UserPlus className="w-4 h-4 mr-2" />
+                  Define Identity Card
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            filteredIdentities.map(identity => {
+              // Get habits linked to this identity
+              const idHabits = habits
+                .filter(h => h.identityId === identity.id)
+                // Sort chronologically morning -> night
+                .sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
+
+              const strength = getIdentityStrength(identity.id);
+
+              return (
+                <div key={identity.id} className="space-y-4">
+                  {/* Identity Header */}
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-end border-b border-border/30 pb-3 gap-2">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-xl font-bold font-serif text-text">{identity.name}</h2>
+                        
+                        <div className="flex gap-1 opacity-60 hover:opacity-100 transition-opacity items-center">
+                          <button
+                            onClick={() => handleOpenEditIdentity(identity)}
+                            className="p-1 text-muted hover:text-text cursor-pointer transition-colors"
+                            title="Edit Identity"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Delete identity "${identity.name}" and all linked habits/completions?`)) {
+                                deleteIdentity(identity.id);
+                              }
+                            }}
+                            className="p-1 text-muted hover:text-primary cursor-pointer transition-colors"
+                            title="Delete Identity"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <p className="text-xs text-muted font-serif italic mt-0.5">
+                        "{identity.beliefStatement || `I am the type of person who is a committed ${identity.name}.`}"
+                      </p>
+                    </div>
+
+                    {/* Identity Strength Badge */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-mono text-muted uppercase tracking-wider">Identity Strength:</span>
+                      <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${
+                        strength >= 80 
+                          ? 'text-success bg-success/10 border-success/20' 
+                          : strength >= 50 
+                          ? 'text-forgive bg-forgive/10 border-forgive/20' 
+                          : 'text-primary bg-primary/10 border-primary/20'
+                      }`}>
+                        {strength}% winning election
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Habits list */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" id="walkthrough-habits-cards">
+                    {idHabits.map(habit => (
+                      <HabitCard
+                        key={habit.id}
+                        habit={habit}
+                        onEdit={handleOpenEditHabit}
+                        onDelete={deleteHabit}
+                      />
+                    ))}
+
+                    {/* Quick helper to add habit under this identity */}
+                    <button
+                      onClick={() => openHabitWithIdentitySeed(identity.id)}
+                      className="border border-dashed border-border/80 hover:border-primary/50 hover:bg-hoverBg/20 rounded-xl p-5 flex flex-col justify-center items-center text-center cursor-pointer transition-all h-[155px]"
+                    >
+                      <Plus className="w-5 h-5 text-muted hover:text-primary mb-1.5" />
+                      <span className="text-xs font-semibold text-text">Prime a new habit engine</span>
+                      <span className="text-[10px] text-muted mt-0.5">Anchored to {identity.name}</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+
+          {/* ANTI-HABITS / BAD HABITS LIST */}
+          <div className="space-y-4 pt-6 border-t border-border/20" id="walkthrough-brakes">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold font-serif text-text flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-primary" />
+                Anti-Habits (Brakes Installed)
+              </h2>
+            </div>
+            
+            {badHabits.length === 0 ? (
+              <p className="text-xs text-muted italic">No active anti-habits tracked. Map behavior to break your bad habits.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {badHabits
+                  .filter(bh => filterIdentityId === 'all' || bh.identityId === filterIdentityId)
+                  .map(bh => (
+                    <BadHabitCard
+                      key={bh.id}
+                      badHabit={bh}
+                      onDelete={deleteBadHabit}
+                    />
+                  ))}
+              </div>
+            )}
+          </div>
+
+        </div>
+
+        {/* RIGHT COLUMN: Sidebar stats & charts (35%) */}
+        <div className="space-y-6">
+          
+          {/* Circular Gauges for Identity Strength */}
+          <Card hoverLift={false} className="border border-border/60">
+            <CardHeader className="py-4 border-b border-border/40">
+              <CardTitle className="text-sm font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                <TrendingUp className="w-4 h-4 text-primary" />
+                Identity Strengths
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="py-4 space-y-4">
+              {identities.length === 0 ? (
+                <p className="text-xs text-muted italic text-center py-2">Define identities to see strength scores.</p>
+              ) : (
+                identities.map(identity => {
+                  const strength = getIdentityStrength(identity.id);
+                  const chartData = [
+                    { name: 'Strength', value: strength, fill: '#A3C9A8' },
+                    { name: 'Backdrop', value: 100, fill: '#F2ECE4' }
+                  ];
+
+                  return (
+                    <div key={identity.id} className="flex items-center gap-4 py-2 border-b border-border/20 last:border-0">
+                      {/* Gauge Chart widget */}
+                      <div className="w-14 h-14 relative shrink-0">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <RadialBarChart 
+                            innerRadius="75%" 
+                            outerRadius="100%" 
+                            data={chartData} 
+                            startAngle={90} 
+                            endAngle={-270}
+                            barSize={6}
+                          >
+                            <RadialBar 
+                              dataKey="value"
+                              cornerRadius={4}
+                            />
+                          </RadialBarChart>
+                        </ResponsiveContainer>
+                        <div className="absolute inset-0 flex items-center justify-center font-mono text-[10px] font-bold text-text">
+                          {strength}%
+                        </div>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xs font-bold text-text truncate">{identity.name}</h4>
+                        <p className="text-[10px] text-muted italic truncate">"{identity.beliefStatement}"</p>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Sobriety summaries list */}
+          <Card hoverLift={false} className="border border-border/60">
+            <CardHeader className="py-4 border-b border-border/40">
+              <CardTitle className="text-sm font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                <Activity className="w-4 h-4 text-primary" />
+                Sobriety Counters
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="py-4 space-y-3">
+              {badHabits.length === 0 ? (
+                <p className="text-xs text-muted italic text-center">No active anti-habits tracked.</p>
+              ) : (
+                badHabits.map(bh => (
+                  <div key={bh.id} className="flex justify-between items-center text-xs py-1.5 border-b border-border/20 last:border-0">
+                    <span className="font-medium text-text">{bh.name}</span>
+                    <span className="font-mono bg-hoverBg text-text font-bold px-2 py-0.5 rounded border border-border/50">
+                      {useHabits().getDaysFree(bh)} Days Free
+                    </span>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Heatmap Widget */}
+          <Heatmap />
+
+        </div>
+      </div>
+
+      {/* --- DIALOG MODALS --- */}
+
+      {/* IDENTITY MODAL */}
+      <Dialog
+        isOpen={identityModalOpen}
+        onClose={() => {
+          setEditingIdentity(null);
+          setIdName('');
+          setIdBelief('');
+          setIdentityModalOpen(false);
+        }}
+        title={editingIdentity ? "Refine Identity Architect" : "Define Identity Card"}
+      >
+        <form onSubmit={handleSaveIdentity} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-text uppercase">Identity (Noun)</label>
+            <Input
+              value={idName}
+              onChange={(e) => setIdName(e.target.value)}
+              placeholder="e.g. The Athlete, The Mindful Thinker, The Writer"
+              required
+            />
+          </div>
+          
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-text uppercase">Core Belief (Mantra)</label>
+            <Textarea
+              value={idBelief}
+              onChange={(e) => setIdBelief(e.target.value)}
+              placeholder="e.g. I am the type of person who values physical health and respects my body daily."
+              rows={3}
+              required
+            />
+            <p className="text-[10px] text-muted">
+              James Clear: Focus on the type of person you wish to become. Identity change builds systems.
             </p>
           </div>
-          <div className="flex flex-col items-end gap-2 shrink-0 relative">
-            <div className="relative">
-              <button
-                onClick={() => setShowDatePicker(!showDatePicker)}
-                className="flex items-center gap-3 bg-white border border-slate-200 hover:border-slate-300 px-5 py-2.5 rounded-lg shadow-sm transition-all text-sm font-bold text-slate-600"
-              >
-                <span className="material-symbols-outlined text-lg">calendar_month</span>
-                <span>{viewingDateRange}</span>
-              </button>
 
-              {showDatePicker && (
-                <div className="absolute top-full right-0 mt-2 bg-white border border-zinc-200 rounded-xl shadow-lg p-4 z-50 w-72">
-                  <div className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-bold text-sm text-zinc-900">Select Date</span>
-                      <button
-                        onClick={() => setShowDatePicker(false)}
-                        className="text-zinc-400 hover:text-zinc-600"
-                      >
-                        <span className="material-symbols-outlined text-sm">close</span>
-                      </button>
-                    </div>
-                    <input
-                      type="date"
-                      value={selectedDate.toISOString().split('T')[0]}
-                      onChange={(e) => setSelectedDate(new Date(e.target.value))}
-                      className="w-full border border-zinc-200 rounded-lg p-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none"
-                    />
-                    <button
-                      onClick={() => setSelectedDate(new Date())}
-                      className="w-full py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-medium rounded-lg transition-colors text-sm"
-                    >
-                      Back to Today
-                    </button>
-                  </div>
-                </div>
-              )}
+          <div className="flex justify-end gap-2 border-t border-border/20 pt-4 mt-4">
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => {
+                setIdentityModalOpen(false);
+                setEditingIdentity(null);
+                setIdName('');
+                setIdBelief('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit">
+              {editingIdentity ? "Update Identity" : "Establish Identity"}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+
+      {/* GOOD HABIT MODAL */}
+      <Dialog
+        isOpen={habitModalOpen}
+        onClose={() => setHabitModalOpen(false)}
+        title={editingHabit ? "Refine Habit System" : "Add Habit Engine"}
+      >
+        <form onSubmit={handleSaveHabit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2 space-y-1.5">
+              <label className="text-xs font-semibold text-text uppercase">Habit Title</label>
+              <Input
+                value={hTitle}
+                onChange={(e) => setHTitle(e.target.value)}
+                placeholder="e.g. Morning Squats, Daily Journaling"
+                required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-text uppercase">Link to Identity</label>
+              <Select value={hIdentityId} onChange={(e) => setHIdentityId(e.target.value)} required>
+                {identities.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-text uppercase">Category</label>
+              <Select value={hCategory} onChange={(e) => setHCategory(e.target.value)}>
+                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-text uppercase">Scheduled Time</label>
+              <Input value={hTime} onChange={(e) => setHTime(e.target.value)} placeholder="07:30 AM" required />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-text uppercase">Location</label>
+              <Input value={hLoc} onChange={(e) => setHLoc(e.target.value)} placeholder="Living Room" required />
             </div>
           </div>
-        </section>
 
-        {/* Level Progress (moved from header for cleaner look) */}
-        <div className="bg-white p-1 rounded-full border border-slate-100 shadow-sm inline-flex items-center gap-4 pr-6 max-w-fit">
-          <div className="bg-slate-900 text-white px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider">
-            Level {userLevel}
+          <div className="border-t border-border/20 pt-3" />
+          <h4 className="text-[10px] font-bold text-text uppercase tracking-widest mb-1">Four Laws Blueprint</h4>
+
+          <div className="space-y-3">
+            <div className="space-y-1 bg-bg/40 p-2.5 rounded border border-border/30">
+              <label className="text-[10px] font-bold text-text uppercase tracking-wider flex items-center">
+                Habit Stack (Obvious)
+              </label>
+              <Input
+                value={hStack}
+                onChange={(e) => setHStack(e.target.value)}
+                placeholder="After I [current habit]... (e.g., drink morning glass of water)"
+              />
+            </div>
+
+            <div className="space-y-1 bg-bg/40 p-2.5 rounded border border-border/30">
+              <label className="text-[10px] font-bold text-text uppercase tracking-wider flex items-center">
+                Environment Prep (Easy)
+              </label>
+              <Input
+                value={hPrep}
+                onChange={(e) => setHPrep(e.target.value)}
+                placeholder="To prime space... (e.g., layout mat next to coffee table)"
+              />
+            </div>
+
+            <div className="space-y-1 bg-bg/40 p-2.5 rounded border border-border/30">
+              <label className="text-[10px] font-bold text-text uppercase tracking-wider flex items-center">
+                Two-Minute Rule (Easy)
+              </label>
+              <Input
+                value={hTwoMin}
+                onChange={(e) => setHTwoMin(e.target.value)}
+                placeholder="Simplified version... (e.g., do 5 bodyweight squats and 1 plank)"
+              />
+            </div>
+
+            <div className="space-y-1 bg-bg/40 p-2.5 rounded border border-border/30">
+              <label className="text-[10px] font-bold text-text uppercase tracking-wider flex items-center">
+                Immediate Reward (Satisfying)
+              </label>
+              <Input
+                value={hReward}
+                onChange={(e) => setHReward(e.target.value)}
+                placeholder="After completion... (e.g., enjoy protein shake)"
+              />
+            </div>
           </div>
-          <div className="flex flex-col gap-0.5 min-w-[200px]">
-            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-blue-400 to-cyan-300 rounded-full" style={{ width: `${levelProgress.percentage}%` }}></div>
+
+          <div className="flex justify-end gap-2 border-t border-border/20 pt-4 mt-4">
+            <Button type="button" variant="outline" onClick={() => setHabitModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit">
+              {editingHabit ? "Update System" : "Activate System"}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+
+      {/* BAD HABIT MODAL */}
+      <Dialog
+        isOpen={badHabitModalOpen}
+        onClose={() => setBadHabitModalOpen(false)}
+        title="Add Anti-Habit (Friction Installation)"
+      >
+        <form onSubmit={handleSaveBadHabit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2 space-y-1.5">
+              <label className="text-xs font-semibold text-text uppercase">Anti-Habit Name</label>
+              <Input
+                value={bhName}
+                onChange={(e) => setBhName(e.target.value)}
+                placeholder="e.g. Late Night Snacking, Doom Scrolling"
+                required
+              />
             </div>
-            <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase tracking-wider">
-              <span>{totalVotes.toLocaleString()} votes cast</span>
-              <span>{levelProgress.remaining} to next level</span>
+
+            <div className="col-span-2 space-y-1.5">
+              <label className="text-xs font-semibold text-text uppercase">Link to Identity</label>
+              <Select value={bhIdentityId} onChange={(e) => setBhIdentityId(e.target.value)} required>
+                {identities.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+              </Select>
             </div>
           </div>
-        </div>
 
+          <div className="border-t border-border/20 pt-3" />
+          <h4 className="text-[10px] font-bold text-text uppercase tracking-widest mb-1">Inversion (Friction Setup)</h4>
 
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-
-          {/* Left Column - Good Habits (8 cols) */}
-          <section className="lg:col-span-8 flex flex-col gap-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-900">
-                <span className="material-symbols-outlined text-blue-600">visibility</span>
-                <h2 className="font-bold text-xl">Make it Obvious</h2>
-              </div>
-              <span className="text-xs font-bold text-zinc-400 bg-zinc-50 px-3 py-1.5 rounded-full border border-zinc-100 uppercase tracking-wide">
-                {currentIdentityHabits.filter(h => !isViewingCurrentWeek ? !isHabitCompletedToday(h.id, filteredCompletions) : !isHabitCompletedToday(h.id, allCompletions)).length} tasks remaining
-              </span>
+          <div className="space-y-3">
+            <div className="space-y-1 bg-bg/40 p-2.5 rounded border border-border/30">
+              <label className="text-[10px] font-bold text-text uppercase tracking-wider">Identified Trigger (Make it Invisible)</label>
+              <Input
+                value={bhTrigger}
+                onChange={(e) => setBhTrigger(e.target.value)}
+                placeholder="Visual cue or situation... (e.g. Watching TV late when bored)"
+              />
             </div>
 
-            <div className="flex flex-col gap-4">
-              {/* Habit Cards */}
-              {currentIdentityHabits.map((habit) => {
-                const streakData = getHabitStreakData(habit.id);
-                return (
-                  <HabitCard
-                    key={habit.id}
-                    habit={habit}
-                    completed={isViewingCurrentWeek
-                      ? isHabitCompletedToday(habit.id, allCompletions)
-                      : isHabitCompletedToday(habit.id, filteredCompletions)
-                    }
-                    streak={getHabitStreakData(habit.id).currentStreak}
-                    longestStreak={getHabitStreakData(habit.id).longestStreak}
-                    onComplete={toggleHabitComplete}
-                    onEdit={handleEditHabit}
-                    onDelete={deleteHabit}
-                  />
-                );
-              })}
-
-              <button
-                onClick={() => navigate('/identity?add=true')}
-                className="w-full py-4 rounded-xl border-2 border-dashed border-slate-200 text-slate-400 hover:border-emerald-300 hover:text-emerald-500 transition-all flex items-center justify-center gap-2 text-sm font-bold bg-white/50 hover:bg-emerald-50/30"
-              >
-                <span className="material-symbols-outlined">add_circle</span>
-                Add New Habit
-              </button>
-            </div>
-          </section>
-
-          {/* Right Column - Bad Habits (4 cols) */}
-          <section className="lg:col-span-4 flex flex-col gap-6">
-            <div className="flex items-center gap-2 text-slate-900">
-              <span className="material-symbols-outlined text-red-500">gpp_bad</span>
-              <h2 className="font-bold text-xl">Make it Invisible</h2>
+            <div className="space-y-1 bg-bg/40 p-2.5 rounded border border-border/30">
+              <label className="text-[10px] font-bold text-text uppercase tracking-wider">Invisible Strategy (1st Law Inversion)</label>
+              <Input
+                value={bhInvisible}
+                onChange={(e) => setBhInvisible(e.target.value)}
+                placeholder="Hide cue... (e.g. Remove junk food from eye-level pantry shelves)"
+              />
             </div>
 
-            <div className="flex flex-col gap-4">
-              {badHabits.filter(h => (h.identityName || identity) === identity).length === 0 && (
-                <div className="bg-white rounded-xl p-8 border border-slate-100 text-center flex flex-col items-center gap-3">
-                  <span className="material-symbols-outlined text-slate-300 text-4xl">check_circle</span>
-                  <p className="text-slate-500 font-medium">No bad habits tracked yet.</p>
-                  <button
-                    onClick={() => navigate('/identity')}
-                    className="text-sm font-bold text-primary hover:text-primary-dark transition-colors"
-                  >
-                    Design your anti-habits
-                  </button>
-                </div>
-              )}
-
-              {badHabits.filter(h => (h.identityName || identity) === identity).map(badHabit => {
-                const daysFree = getDaysFree(badHabit);
-                const totalLapses = badHabit.lapses?.length || 0;
-                // Calculate record (simplified for now, ideally would calculate max gap between lapses)
-                // For MVP, we can treat "Record" as longest streak if we compute it, or just current for now if complex
-                // Let's just user "Days Free" as primary metric.
-
-                return (
-                  <div key={badHabit.id} className="bg-white rounded-xl shadow-card p-6 border border-slate-100 flex flex-col gap-6 group hover:border-red-100 transition-colors">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-red-50 rounded-xl text-red-500 border border-red-100">
-                          <span className="material-symbols-outlined text-xl">block</span>
-                        </div>
-                        <h3 className="font-extrabold text-slate-900 text-lg leading-tight">{badHabit.name}</h3>
-                      </div>
-                      <button
-                        onClick={() => navigate(`/identity?editBad=${badHabit.id}`)}
-                        className="text-slate-300 hover:text-slate-500 transition-colors"
-                      >
-                        <span className="material-symbols-outlined">more_horiz</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-end justify-between">
-                      <div>
-                        <span className={`block text-5xl font-black leading-none ${daysFree === 0 ? 'text-red-500' : 'text-slate-900'}`}>
-                          {daysFree}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest mt-1 block">Days Free</span>
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <span className={`text-[10px] px-3 py-1 rounded-full font-bold border flex items-center gap-1 ${daysFree >= 7 ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                          daysFree > 0 ? 'bg-blue-50 text-blue-700 border-blue-100' :
-                            'bg-red-50 text-red-700 border-red-100'
-                          }`}>
-                          {daysFree >= 7 ? 'STRONG 💪' : daysFree > 0 ? 'BUILDING' : 'SLIPPED TODAY'}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-medium">Total Relapses: {totalLapses}</span>
-                      </div>
-                    </div>
-
-                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                      <div
-                        className={`h-2 rounded-full transition-all duration-500 ${daysFree === 0 ? 'bg-red-400' : 'bg-emerald-400'}`}
-                        style={{ width: `${Math.min((daysFree / 30) * 100, 100)}%` }}
-                      ></div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 mt-2">
-                      <button
-                        onClick={() => navigate(`/identity?editBad=${badHabit.id}`)}
-                        className="bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg px-4 py-2.5 text-[11px] font-black uppercase tracking-widest transition-all w-full flex items-center justify-center gap-2"
-                      >
-                        <span className="material-symbols-outlined text-sm">edit</span>
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleLogRelapse(badHabit.id)}
-                        className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-lg px-4 py-2.5 text-[11px] font-black uppercase tracking-widest transition-all w-full flex items-center justify-center gap-2 group-hover:bg-red-100"
-                      >
-                        <span className="material-symbols-outlined text-sm">restart_alt</span>
-                        Log Relapse
-                      </button>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        if (!window.confirm('Delete this bad habit? This action cannot be undone.')) return;
-                        const result = await firestoreService.deleteBadHabit(user.uid, badHabit.id);
-                        if (result.success) {
-                          setBadHabits(prev => prev.filter(h => h.id !== badHabit.id));
-                        } else {
-                          alert('Failed to delete bad habit.');
-                        }
-                      }}
-                      className="text-xs text-red-500 font-bold hover:text-red-700 self-end"
-                    >
-                      Delete Habit
-                    </button>
-                  </div>
-                );
-              })}
+            <div className="space-y-1 bg-bg/40 p-2.5 rounded border border-border/30">
+              <label className="text-[10px] font-bold text-text uppercase tracking-wider">Difficult Strategy / commitment Device (3rd Law Inversion)</label>
+              <Input
+                value={bhDifficult}
+                onChange={(e) => setBhDifficult(e.target.value)}
+                placeholder="Add obstacles... (e.g. Lock pantry cupboards after 9:00 PM)"
+              />
             </div>
-          </section>
-        </div>
-
-        {/* Footer Section - Satisfying / Heatmap */}
-        <footer className="w-full mt-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-slate-900">
-              <span className="material-symbols-outlined text-emerald-500">sentiment_satisfied</span>
-              <h2 className="font-bold text-xl">Make it Satisfying</h2>
-            </div>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Consistency Map</span>
           </div>
-          <Heatmap data={heatmapData} />
-        </footer>
 
-      </main>
+          <div className="flex justify-end gap-2 border-t border-border/20 pt-4 mt-4">
+            <Button type="button" variant="outline" onClick={() => setBadHabitModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button id="btn-install-brakes" type="submit">
+              Install Brakes
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+
+      <InteractiveGuide forceStart={guideForceStart} onComplete={() => setGuideForceStart(false)} />
     </div>
-  )
+  );
 }

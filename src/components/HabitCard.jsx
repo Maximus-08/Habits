@@ -1,140 +1,203 @@
-import { useUser } from '../context/UserContext'
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Check, Undo2, Award, Zap, Sparkles, Trash2, Edit } from 'lucide-react';
+import { useHabits } from '../context/HabitsContext';
+import { Card, Button, InfoTooltip } from './ui/Primitives';
 
-export default function HabitCard({ habit, completed, onComplete, onEdit, onDelete, streak = 0, longestStreak = 0, isLoading = false }) {
-  const { id, title, description, category, time, location, stackedHabit, twoMinRule, currentProgress = 0, targetSteps = 1 } = habit
-  const { incrementHabitProgress } = useUser();
+export default function HabitCard({ habit, onEdit, onDelete }) {
+  const { completions, selectedDate, toggleCompletion } = useHabits();
+  const [hovered, setHovered] = useState(false);
 
-  // Calculate display progress percentage
-  const progressPercentage = targetSteps > 1 ? (currentProgress / targetSteps) * 100 : 0;
+  // Check completions for today
+  const completionToday = completions.find(
+    c => c.habitId === habit.id && c.dateNormalized === selectedDate
+  );
+  const isCompletedToday = !!completionToday;
+  const isTwoMinToday = completionToday?.isTwoMinVersion;
+
+  // Check "Never Miss Twice" - Was yesterday missed?
+  // Only trigger this warning if selectedDate is "today" (so we don't display yesterday warning when browsing historical logs)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isSelectedDateToday = selectedDate === todayStr;
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+  const completedYesterday = completions.some(
+    c => c.habitId === habit.id && c.dateNormalized === yesterdayStr
+  );
+  const hasPastCompletions = completions.some(c => c.habitId === habit.id);
+  
+  // Show warning if yesterday was missed, but we are looking at today, and the habit wasn't completed today yet, and it has some history
+  const isYesterdayMissed = isSelectedDateToday && !completedYesterday && !isCompletedToday && hasPastCompletions;
+
+  const handleVote = (isTwoMin = false) => {
+    toggleCompletion(habit.id, selectedDate, isTwoMin);
+  };
+
+  // Compose implementation intention
+  const hasIntention = habit.stackedHabit || (habit.time && habit.location);
+  const intentionSentence = hasIntention ? (
+    <p className="text-sm text-text font-serif italic mb-3 leading-relaxed">
+      "{habit.stackedHabit ? `${habit.stackedHabit}, ` : "At "}{" "}
+      I will <span className="font-semibold font-sans not-italic text-primary">{habit.title}</span>{" "}
+      {habit.time ? `at ${habit.time}` : ""}{" "}
+      {habit.location ? `in ${habit.location}` : ""}."
+    </p>
+  ) : (
+    <p className="text-sm font-semibold text-text font-sans mb-3">{habit.title}</p>
+  );
 
   return (
-    <div className="group relative overflow-hidden bg-white rounded-2xl shadow-sm border border-zinc-200 hover:shadow-card-hover hover:border-secondary/40 transition-all duration-300">
-
-      <div className={`absolute top-0 left-0 w-1 h-full transition-all ${completed ? 'bg-primary w-1.5' : 'bg-zinc-200 group-hover:bg-secondary/50'}`}></div>
-      <div className="p-6 flex flex-col justify-between gap-4">
-        <div className="flex justify-between items-start">
-          <div className="flex flex-col gap-1 w-full">
-            <div className="flex items-center justify-between w-full mb-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest border border-zinc-100 px-2 py-1 rounded-full">
-                  {category}
-                </span>
-                <div className="bg-secondary/10 border border-secondary/20 px-2 py-1 rounded-md flex items-center gap-1 text-[10px] text-secondary font-bold">
-                  <span className="material-symbols-outlined text-[14px]">link</span>
-                  After <span>{stackedHabit}</span>
-                </div>
-              </div>
-              {/* Streak Badge */}
-              {streak > 0 && (
-                <div className="hidden md:flex items-center gap-1 bg-emerald-50 text-emerald-600 border border-emerald-100 px-2 py-1 rounded font-bold text-xs uppercase tracking-wide">
-                  <span className="material-symbols-outlined text-[14px]">local_fire_department</span>
-                  {streak}d streak
-                </div>
-              )}
-            </div>
-
-            <h3 className="text-xl font-extrabold text-slate-900 mt-1 group-hover:text-secondary transition-colors">{title}</h3>
-            <p className="text-slate-500 text-sm">{description}</p>
-          </div>
-        </div>
-
-        <div className="bg-slate-50 rounded-lg p-3 flex items-center gap-4 text-sm text-slate-600 border border-slate-100/50">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-slate-400 text-lg">schedule</span>
-            <span>At <strong>{time}</strong></span>
-          </div>
-          <div className="w-px h-4 bg-slate-200"></div>
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-slate-400 text-lg">location_on</span>
-            <span>In <strong>{location}</strong></span>
-          </div>
-          {/* Mobile Streak Display */}
-          {streak > 0 && (
-            <>
-              <div className="w-px h-4 bg-slate-200 md:hidden"></div>
-              <div className="flex items-center gap-1 md:hidden text-emerald-600 font-bold">
-                <span className="material-symbols-outlined text-lg">local_fire_department</span>
-                <span>{streak}d</span>
-              </div>
-            </>
-          )}
-        </div>
-
-        {targetSteps > 1 && (
-          <div className="w-full h-2.5 bg-zinc-100 rounded-full overflow-hidden border border-zinc-100">
-            <div
-              className="h-full bg-gradient-to-r from-primary to-emerald-400 rounded-full transition-all duration-500 shadow-glow"
-              style={{ width: `${progressPercentage}%` }}
-            ></div>
+    <motion.div
+      layout
+      className="relative"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <Card
+        hoverLift={!isCompletedToday}
+        className={`transition-all duration-300 border ${
+          isCompletedToday
+            ? 'bg-successTint/30 border-success/40'
+            : isYesterdayMissed
+            ? 'border-forgive ring-2 ring-forgive/20 animate-pulse'
+            : 'border-border/60'
+        }`}
+      >
+        {/* Never Miss Twice Badge */}
+        {isYesterdayMissed && (
+          <div className="bg-forgive/15 border-b border-forgive text-text p-2.5 text-xs font-semibold flex items-center gap-2">
+            <span className="flex h-2 w-2 rounded-full bg-forgive" />
+            <span>Yesterday was a slip. Cast a vote today — even the 2-min version counts!</span>
           </div>
         )}
 
-        <div className="flex flex-col sm:flex-row items-center justify-between mt-2 pt-4 border-t border-zinc-50 gap-4">
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            <label className="relative inline-flex items-center cursor-pointer group/toggle">
-              <input className="sr-only peer" type="checkbox" />
-              <div className="w-9 h-5 bg-zinc-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
-              <span className="ml-2 text-xs font-bold text-zinc-400 group-hover/toggle:text-zinc-600 transition-colors">2-Min Rule</span>
-            </label>
-            <div className="flex flex-col">
-              <span className="text-xs text-zinc-400 italic">"{twoMinRule}"</span>
+        <div className="p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <span className="text-[10px] uppercase font-mono tracking-widest text-muted bg-hoverBg px-2 py-0.5 rounded border border-border/50">
+                {habit.category}
+              </span>
+              
+              <div className="mt-2">
+                {intentionSentence}
+              </div>
+
+              {habit.description && (
+                <p className="text-xs text-muted leading-relaxed mb-4">
+                  {habit.description}
+                </p>
+              )}
+
+              {/* Conditional parameters */}
+              <div className="flex flex-wrap gap-2 mb-2">
+                {habit.environmentPrep && (
+                  <span className="text-xs text-text bg-hoverBg/50 border border-border/50 px-2 py-0.8 rounded-md flex items-center gap-1">
+                    <span>🔧 Prep:</span>
+                    <span className="text-muted text-[11px]">{habit.environmentPrep}</span>
+                  </span>
+                )}
+                {habit.immediateReward && (
+                  <span className="text-xs text-text bg-successTint/30 border border-success/20 px-2 py-0.8 rounded-md flex items-center gap-1">
+                    <span>🎁 Reward:</span>
+                    <span className="text-muted text-[11px]">{habit.immediateReward}</span>
+                  </span>
+                )}
+                {habit.twoMinRule && (
+                  <span className="text-xs text-text bg-forgive/10 border border-forgive/20 px-2 py-0.8 rounded-md flex items-center gap-1">
+                    <span>⚡ 2-Min:</span>
+                    <span className="text-muted text-[11px]">{habit.twoMinRule}</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Checkmark Completion Trigger */}
+            <div className="flex flex-col items-center justify-center space-y-2 select-none">
+              <AnimatePresence mode="wait">
+                {isCompletedToday ? (
+                  <motion.button
+                    key="completed"
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.8, opacity: 0 }}
+                    onClick={() => handleVote()}
+                    className="w-12 h-12 bg-success text-white rounded-full flex items-center justify-center cursor-pointer shadow-md hover:bg-primary transition-colors duration-200"
+                    title="Click to Undo"
+                  >
+                    {hovered ? (
+                      <Undo2 className="w-5 h-5" />
+                    ) : (
+                      <motion.div
+                        initial={{ pathLength: 0 }}
+                        animate={{ pathLength: 1 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <Check className="w-6 h-6 stroke-[3px]" />
+                      </motion.div>
+                    )}
+                  </motion.button>
+                ) : (
+                  <div key="uncompleted" className="flex flex-col items-center space-y-2">
+                    {/* Standard Vote Button */}
+                    <button
+                      onClick={() => handleVote(false)}
+                      className="w-12 h-12 rounded-full border-2 border-border/80 hover:border-success/60 bg-surface flex items-center justify-center cursor-pointer transition-all hover:scale-105"
+                      title="Cast full vote for identity"
+                    >
+                      <div className="w-3.5 h-3.5 rounded-full bg-border/40 hover:bg-success/40" />
+                    </button>
+                    <span className="text-[10px] text-muted font-mono font-medium">Vote</span>
+                  </div>
+                )}
+              </AnimatePresence>
+
+              {/* 2-Min Switch (Only if 2-Min is configured and not completed yet) */}
+              {!isCompletedToday && habit.twoMinRule && (
+                <button
+                  onClick={() => handleVote(true)}
+                  className="text-[10px] px-2 py-1 rounded bg-hoverBg text-text hover:bg-forgive/20 border border-border/40 flex items-center gap-0.5 cursor-pointer transition-colors"
+                  title="Execute the simplified 2-minute version"
+                >
+                  <Zap className="w-3 h-3 text-forgive fill-forgive" />
+                  <span>2-Min</span>
+                </button>
+              )}
+
+              {/* Completed Type Indicator */}
+              {isCompletedToday && (
+                <span className={`text-[10px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                  isTwoMinToday 
+                    ? 'text-forgive bg-forgive/10 border border-forgive/20' 
+                    : 'text-success bg-success/10 border border-success/20'
+                }`}>
+                  {isTwoMinToday ? "⚡ 2-Min" : "✨ Full"}
+                </span>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <button
-              onClick={(e) => { e.stopPropagation(); onEdit(habit); }}
-              className="bg-white hover:bg-secondary/10 text-zinc-400 hover:text-secondary p-2 rounded-lg border border-zinc-200 transition-all"
-              title="Edit habit"
+          
+          {/* Card footer controls (Edit/Delete) visible on hover */}
+          <div className="flex items-center justify-end border-t border-border/20 mt-4 pt-3 gap-2 opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity">
+            <button 
+              onClick={() => onEdit(habit)} 
+              className="p-1.5 text-muted hover:text-text hover:bg-hoverBg rounded transition-colors cursor-pointer"
+              title="Edit Habit System"
             >
-              <span className="material-symbols-outlined text-[20px]">edit</span>
+              <Edit className="w-3.5 h-3.5" />
             </button>
-            <button
-              onClick={() => {
-                if (window.confirm('Are you sure you want to delete this habit?')) {
-                  onDelete(id);
-                }
-              }}
-              className="bg-white hover:bg-red-50 text-zinc-400 hover:text-red-500 p-2 rounded-lg border border-zinc-200 transition-all"
-              title="Delete habit"
+            <button 
+              onClick={() => onDelete(habit.id)} 
+              className="p-1.5 text-muted hover:text-primary hover:bg-hoverBg rounded transition-colors cursor-pointer"
+              title="Delete Habit"
             >
-              <span className="material-symbols-outlined text-[20px]">delete</span>
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
-          <button
-            onClick={() => {
-              if (isLoading) return;
-              if (targetSteps > 1 && !completed) {
-                incrementHabitProgress(id);
-              } else {
-                onComplete(id);
-              }
-            }}
-            disabled={isLoading}
-            className={`flex items-center gap-2 px-8 py-2.5 rounded-lg font-bold text-sm shadow-md transition-all transform active:scale-95 w-full sm:w-auto justify-center ${isLoading
-              ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
-              : completed
-                ? 'bg-emerald-400 hover:bg-emerald-500 text-white shadow-md'
-                : targetSteps > 1
-                  ? 'bg-white border border-slate-200 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-600 text-slate-600'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-600'
-              }`}
-          >
-            {isLoading ? (
-              <>
-                <span className="material-symbols-outlined icon-sm animate-spin">sync</span>
-                Updating...
-              </>
-            ) : (
-              <>
-                <span className="material-symbols-outlined text-lg">
-                  {completed ? 'check_circle' : targetSteps > 1 ? 'add' : 'check_circle'}
-                </span>
-                {completed ? 'Complete' : targetSteps > 1 ? `Track (${currentProgress}/${targetSteps})` : 'Complete'}
-              </>
-            )}
-          </button>
         </div>
-      </div>
-    </div>
-  )
+      </Card>
+    </motion.div>
+  );
 }
