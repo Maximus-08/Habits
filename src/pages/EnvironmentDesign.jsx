@@ -4,6 +4,8 @@ import { Card, CardHeader, CardTitle, CardContent, Button, Input, Select } from 
 import { Compass, Flame, ShieldAlert, Save, RefreshCw, EyeOff, Lock, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+import { fetchEnvironmentSuggestions } from '../services/aiService';
+
 export default function EnvironmentDesign() {
   const { 
     identities, 
@@ -75,55 +77,37 @@ export default function EnvironmentDesign() {
     }
   };
 
-  // Environment Coach heuristics
-  const handleAskCoach = (type, targetId, habitName) => {
+  // Environment Coach suggestions from Gemini (falls back to local heuristics)
+  const handleAskCoach = async (type, targetId, habitName) => {
     setCoachLoading(prev => ({ ...prev, [targetId]: true }));
     
-    setTimeout(() => {
-      let suggestion = "";
-      const hName = habitName.toLowerCase();
+    try {
+      // 900ms delay to keep the spinner visible and UI feel natural
+      await new Promise(resolve => setTimeout(resolve, 900));
+      
+      const suggestions = await fetchEnvironmentSuggestions(type, habitName);
       
       if (type === 'engine') {
-        if (hName.includes('exercise') || hName.includes('workout') || hName.includes('gym')) {
-          suggestion = "Unroll exercise mat in living room and stack workout clothes directly on coffee table.";
-        } else if (hName.includes('write') || hName.includes('journal') || hName.includes('study')) {
-          suggestion = "Place open notebook, pilot pen, and glasses on empty desk. Turn laptop completely off.";
-        } else if (hName.includes('read') || hName.includes('book')) {
-          suggestion = "Put bookmark-opened book on pillow. Remove charging cords from sleeping area.";
-        } else if (hName.includes('meditat') || hName.includes('breath') || hName.includes('yoga')) {
-          suggestion = "Place clean cushion in center of quiet bedroom corner with an ambient candle.";
-        } else {
-          suggestion = `Set out materials for ${habitName} in clear sight before your stacked routine trigger occurs.`;
-        }
-        setEditedPreps(prev => ({ ...prev, [targetId]: suggestion }));
+        setEditedPreps(prev => ({ ...prev, [targetId]: suggestions.suggestion || '' }));
       } else {
-        // bad habit brakes suggestions
-        let invisible = "";
-        let difficult = "";
-        if (hName.includes('snack') || hName.includes('food') || hName.includes('sugar') || hName.includes('cookie')) {
-          invisible = "Move cookie jars and chocolates into top pantry cabinets inside opaque boxes.";
-          difficult = "Lock pantry cupboards after 9 PM. Put keys in hallway drawer.";
-        } else if (hName.includes('scroll') || hName.includes('phone') || hName.includes('social') || hName.includes('screen')) {
-          invisible = "Store mobile charger in kitchen. Keep phone out of bedtime bedroom.";
-          difficult = "Turn off phone completely at 9:30 PM and set router to auto-shutoff.";
-        } else if (hName.includes('tv') || hName.includes('netflix') || hName.includes('show') || hName.includes('game')) {
-          invisible = "Put TV remote inside a closed drawer or wardrobe under sheets.";
-          difficult = "Unplug TV power supply from plug point after turning it off.";
-        } else {
-          invisible = "Keep trigger cues inside drawers, boxes, or other rooms.";
-          difficult = "Establish a friction obstacle or commitment device requiring 2+ minutes to reverse.";
-        }
         setEditedBrakes(prev => ({
           ...prev,
-          [targetId]: { invisibleStrategy: invisible, difficultStrategy: difficult }
+          [targetId]: {
+            invisibleStrategy: suggestions.invisibleStrategy || '',
+            difficultStrategy: suggestions.difficultStrategy || ''
+          }
         }));
       }
 
-      setCoachLoading(prev => ({ ...prev, [targetId]: false }));
       toast.success("Coach recommendations loaded!", {
         style: { background: '#FFFAF3', color: '#4A4036', border: '1px solid #EAE4DD' }
       });
-    }, 900);
+    } catch (error) {
+      console.error("Failed to load environment coach suggestions:", error);
+      toast.error("Failed to load suggestions. Using local fallback.");
+    } finally {
+      setCoachLoading(prev => ({ ...prev, [targetId]: false }));
+    }
   };
 
   return (

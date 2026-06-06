@@ -101,13 +101,6 @@ export default function WeeklyReview() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 select-none">
-      <button
-        onClick={() => navigate('/dashboard')}
-        className="text-xs font-semibold text-muted hover:text-text flex items-center mb-6 transition-colors cursor-pointer"
-      >
-        <ArrowLeft className="w-3.5 h-3.5 mr-1" />
-        Back to Dashboard
-      </button>
 
       <div className="flex items-center space-x-3 mb-6 border-b border-border/40 pb-5">
         <FileText className="w-8 h-8 text-primary" />

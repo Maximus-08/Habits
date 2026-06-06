@@ -92,14 +92,7 @@ export default function Analytics() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 select-none">
-      <button
-        onClick={() => navigate('/dashboard')}
-        className="text-xs font-semibold text-muted hover:text-text flex items-center mb-6 transition-colors cursor-pointer"
-      >
-        <ArrowLeft className="w-3.5 h-3.5 mr-1" />
-        Back to Dashboard
-      </button>
-
+      
       <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-border/40 pb-5 mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold font-serif text-text">Performance Analytics</h1>
