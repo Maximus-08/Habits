@@ -109,7 +109,7 @@ export async function fetchOnboardingSuggestions(identityName, habitTitle) {
 
   try {
     const model = client.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: import.meta.env.VITE_GEMINI_MODEL || "gemma-4-26b-a4b-it",
       generationConfig: { responseMimeType: "application/json" }
     });
 
@@ -151,7 +151,7 @@ export async function fetchEnvironmentSuggestions(type, habitName) {
 
   try {
     const model = client.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: import.meta.env.VITE_GEMINI_MODEL || "gemma-4-26b-a4b-it",
       generationConfig: { responseMimeType: "application/json" }
     });
 

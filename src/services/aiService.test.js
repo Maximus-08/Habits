@@ -24,14 +24,17 @@ vi.mock('@google/generative-ai', () => {
 
 describe('aiService - Gemini Coach Suggestion Engine', () => {
   const originalKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const originalModel = import.meta.env.VITE_GEMINI_MODEL;
 
   beforeEach(() => {
     vi.clearAllMocks();
     _resetClient();
+    import.meta.env.VITE_GEMINI_MODEL = 'gemma-4-26b-a4b-it';
   });
 
   afterEach(() => {
     import.meta.env.VITE_GEMINI_API_KEY = originalKey;
+    import.meta.env.VITE_GEMINI_MODEL = originalModel;
     _resetClient();
   });
 
@@ -61,7 +64,7 @@ describe('aiService - Gemini Coach Suggestion Engine', () => {
     
     expect(mockConstructor).toHaveBeenCalledWith('mock-api-key-xyz');
     expect(mockGetGenerativeModel).toHaveBeenCalledWith({
-      model: 'gemini-1.5-flash',
+      model: 'gemma-4-26b-a4b-it',
       generationConfig: { responseMimeType: 'application/json' }
     });
     expect(res.stackedHabit).toBe('After I put my shoes on');
