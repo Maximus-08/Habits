@@ -311,10 +311,10 @@ export default function Dashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b border-border/40 pb-6">
         <div>
           <h1 className="text-3xl font-bold font-serif text-text leading-tight">
-            {greeting}, {currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Explorer'}
+            {greeting}, {currentUser?.displayName?.trim()?.split(' ')[0] || currentUser?.email?.split('@')[0] || 'Explorer'}
           </h1>
           <p className="text-sm text-muted mt-1 font-sans">
-            Here is your behavioral voting blueprint for today. Keep voting for your ideal identity.
+            "Every action you take is a vote for the type of person you wish to become." - James Clear
           </p>
         </div>
 
@@ -587,7 +587,7 @@ export default function Dashboard() {
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-bold font-serif text-text flex items-center gap-2">
                 <ShieldAlert className="w-5 h-5 text-primary" />
-                Anti-Habits (Brakes Installed)
+                Anti-Habits
               </h2>
             </div>
             

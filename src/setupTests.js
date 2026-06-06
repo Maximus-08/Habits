@@ -18,29 +18,37 @@ Object.defineProperty(window, 'matchMedia', {
 });
 
 // Mock framer-motion using React.createElement for standard JS parsing
-vi.mock('framer-motion', () => ({
-  motion: {
-    div: React.forwardRef(({ children, ...props }, ref) => {
-      const { 
-        layout, initial, animate, exit, transition, 
-        hoverLift, whileHover, whileTap, variants, style, ...validProps 
-      } = props;
-      
-      // If animate is a styling object, merge it into DOM style so assertions can read it
-      const mergedStyle = {
-        ...style,
-        ...(animate && typeof animate === 'object' ? animate : {})
-      };
-      
-      return React.createElement('div', { ref, style: mergedStyle, ...validProps }, children);
-    }),
-    button: React.forwardRef(({ children, ...props }, ref) => {
-      const { initial, animate, exit, transition, ...validProps } = props;
-      return React.createElement('button', { ref, ...validProps }, children);
-    }),
-  },
-  AnimatePresence: ({ children }) => React.createElement(React.Fragment, null, children),
-}));
+vi.mock('framer-motion', () => {
+  const MotionDiv = React.forwardRef(({ children, ...props }, ref) => {
+    const { 
+      layout, initial, animate, exit, transition, 
+      hoverLift, whileHover, whileTap, variants, style, ...validProps 
+    } = props;
+    
+    // If animate is a styling object, merge it into DOM style so assertions can read it
+    const mergedStyle = {
+      ...style,
+      ...(animate && typeof animate === 'object' ? animate : {})
+    };
+    
+    return React.createElement('div', { ref, style: mergedStyle, ...validProps }, children);
+  });
+  MotionDiv.displayName = 'MotionDiv';
+
+  const MotionButton = React.forwardRef(({ children, ...props }, ref) => {
+    const { initial, animate, exit, transition, ...validProps } = props;
+    return React.createElement('button', { ref, ...validProps }, children);
+  });
+  MotionButton.displayName = 'MotionButton';
+
+  return {
+    motion: {
+      div: MotionDiv,
+      button: MotionButton,
+    },
+    AnimatePresence: ({ children }) => React.createElement(React.Fragment, null, children),
+  };
+});
 
 // Mock recharts
 vi.mock('recharts', () => ({

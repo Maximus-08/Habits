@@ -111,7 +111,7 @@ export default function HabitCard({ habit, onEdit, onDelete }) {
         {isYesterdayMissed && (
           <div className="bg-forgive/15 border-b border-forgive text-text p-2.5 text-xs font-semibold flex items-center gap-2">
             <span className="flex h-2 w-2 rounded-full bg-forgive" />
-            <span>Yesterday was a slip. Cast a vote today — even the 2-min version counts!</span>
+            <span>Yesterday was a slip. Cast a vote today - even the 2-min version counts!</span>
           </div>
         )}
 
