@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useHabits } from '../context/HabitsContext';
 import { Card, CardHeader, CardTitle, CardContent, Button, Input, Select } from '../components/ui/Primitives';
-import { Compass, Flame, ShieldAlert, Save, RefreshCw, EyeOff, Lock, Sparkles } from 'lucide-react';
+import { Flame, ShieldAlert, Save, EyeOff, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { fetchEnvironmentSuggestions } from '../services/aiService';

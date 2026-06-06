@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRight, ArrowLeft, X, Sparkles, Target, Compass, Lock, Award, ClipboardCheck } from 'lucide-react';
-import { Button, Card } from './ui/Primitives';
+import { Button } from './ui/Primitives';
 
 const STEPS = [
   {

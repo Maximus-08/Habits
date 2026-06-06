@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { calculateLevelFromVotes, LEVELS } from './constants';
+import { calculateLevelFromVotes } from './constants';
 import { timeToMinutes, getWeekNumber, getLocalDateString } from './dateUtils';
 
 describe('calculateLevelFromVotes', () => {

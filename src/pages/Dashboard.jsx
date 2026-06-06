@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Plus, Sparkles, BookOpen, AlertCircle, Calendar, ArrowRight,
-  TrendingUp, Activity, Award, ShieldAlert, FileText, Settings, UserPlus, HelpCircle,
+  Plus, Sparkles, Calendar, ArrowRight,
+  TrendingUp, Activity, Award, ShieldAlert, FileText, UserPlus,
   Edit2, Trash2
 } from 'lucide-react';
 import { RadialBarChart, RadialBar, ResponsiveContainer } from 'recharts';
-import { useHabits, LEVELS } from '../context/HabitsContext';
+import { useHabits } from '../context/HabitsContext';
 import HabitCard from '../components/HabitCard';
 import BadHabitCard from '../components/BadHabitCard';
 import Heatmap from '../components/Heatmap';
@@ -26,7 +26,6 @@ export default function Dashboard() {
     identities,
     habits,
     badHabits,
-    completions,
     weeklyReviews,
     selectedDate,
     setSelectedDate,
@@ -293,11 +292,6 @@ export default function Dashboard() {
     resetHabitForm();
     setHIdentityId(identityId);
     setHabitModalOpen(true);
-  };
-
-  const openBadHabitWithIdentitySeed = (identityId) => {
-    setBhIdentityId(identityId);
-    setBadHabitModalOpen(true);
   };
 
   // Filtered lists

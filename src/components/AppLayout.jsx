@@ -1,9 +1,8 @@
-import React from 'react';
+import { useEffect } from 'react';
 import { Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
 import { useHabits } from '../context/HabitsContext';
 import { HabitsLogo } from './HabitsLogo';
 import { Award, LogOut, HelpCircle } from 'lucide-react';
-import toast from 'react-hot-toast';
 
 export default function AppLayout({ children }) {
   const location = useLocation();
@@ -14,7 +13,7 @@ export default function AppLayout({ children }) {
   const isLanding = location.pathname === '/';
 
   // Cleanup onboarding submission flag once identities successfully load in the context
-  React.useEffect(() => {
+  useEffect(() => {
     if (identities.length > 0) {
       sessionStorage.removeItem('onboarding_submitted');
     }

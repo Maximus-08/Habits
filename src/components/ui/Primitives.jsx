@@ -14,7 +14,6 @@ export const Button = React.forwardRef(({
   className, 
   variant = 'default', 
   size = 'default', 
-  asChild = false, 
   children,
   ...props 
 }, ref) => {

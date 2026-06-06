@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useHabits } from '../context/HabitsContext';
 import { Button, Card, CardContent, Input, Textarea, Select, InfoTooltip } from '../components/ui/Primitives';
-import { Sparkles, ArrowRight, ArrowLeft, Target, Heart } from 'lucide-react';
+import { Sparkles, ArrowRight, ArrowLeft, Target } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { fetchOnboardingSuggestions } from '../services/aiService';

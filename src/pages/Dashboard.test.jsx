@@ -1,6 +1,5 @@
-import React from 'react';
 import { describe, test, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '../utils/test-utils';
+import { render, screen, fireEvent } from '../utils/test-utils';
 import userEvent from '@testing-library/user-event';
 import Dashboard from './Dashboard';
 import { firestoreService } from '../services/firestoreService';
@@ -12,7 +11,6 @@ describe('Dashboard Page Integration', () => {
 
   test('should render greeting, level bar, cards, and support calendar date changes', async () => {
     console.log("[DEBUG Dashboard] Starting test 1");
-    const user = userEvent.setup();
     render(<Dashboard />);
 
     // Wait for the asynchronous userProfile and identities context sync to complete

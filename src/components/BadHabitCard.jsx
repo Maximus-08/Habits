@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldAlert, RefreshCw, EyeOff, Lock, Trash2, Calendar } from 'lucide-react';
+import { ShieldAlert, EyeOff, Lock, Trash2, Calendar } from 'lucide-react';
 import { useHabits } from '../context/HabitsContext';
 import { Card, Button, Dialog, Input, Textarea } from './ui/Primitives';
 import toast from 'react-hot-toast';

@@ -1,16 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, 
   ResponsiveContainer, LineChart, Line, Legend
 } from 'recharts';
 import { useHabits } from '../context/HabitsContext';
 import { getLocalDateString } from '../utils/dateUtils';
-import { Card, CardHeader, CardTitle, CardContent, Button } from '../components/ui/Primitives';
-import { ArrowLeft, Award, ShieldAlert, Sparkles, TrendingUp, Calendar, FileText } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Primitives';
+import { Award, ShieldAlert, Sparkles, TrendingUp, FileText } from 'lucide-react';
 
 export default function Analytics() {
-  const navigate = useNavigate();
   const { 
     habits = [], 
     badHabits = [], 

@@ -9,14 +9,13 @@ import {
   updateDoc, 
   deleteDoc, 
   getDoc,
-  addDoc,
   writeBatch,
   query,
   where,
   runTransaction
 } from 'firebase/firestore';
 
-import { LEVELS, calculateLevelFromVotes } from '../utils/constants';
+import { calculateLevelFromVotes } from '../utils/constants';
 
 export const firestoreService = {
   // --- REAL-TIME SUBSCRIBERS ---
@@ -175,7 +174,8 @@ export const firestoreService = {
   saveHabit: async (userId, habit) => {
     const habitsRef = collection(db, 'users', userId, 'habits');
     const newDocRef = doc(habitsRef);
-    const { identityName, ...cleanHabit } = habit; // Exclude identityName
+    const cleanHabit = { ...habit };
+    delete cleanHabit.identityName; // Exclude identityName
     const data = {
       ...cleanHabit,
       createdAt: new Date().toISOString()
@@ -186,7 +186,8 @@ export const firestoreService = {
 
   updateHabit: async (userId, id, fields) => {
     const docRef = doc(db, 'users', userId, 'habits', id);
-    const { identityName, ...cleanFields } = fields; // Exclude identityName if passed
+    const cleanFields = { ...fields };
+    delete cleanFields.identityName; // Exclude identityName if passed
     await updateDoc(docRef, cleanFields);
   },
 
@@ -252,7 +253,8 @@ export const firestoreService = {
   saveBadHabit: async (userId, badHabit) => {
     const badHabitsRef = collection(db, 'users', userId, 'badHabits');
     const newDocRef = doc(badHabitsRef);
-    const { identityName, ...cleanBadHabit } = badHabit; // Exclude identityName
+    const cleanBadHabit = { ...badHabit };
+    delete cleanBadHabit.identityName; // Exclude identityName
     const data = {
       ...cleanBadHabit,
       lapses: [],
@@ -264,7 +266,8 @@ export const firestoreService = {
 
   updateBadHabit: async (userId, id, fields) => {
     const docRef = doc(db, 'users', userId, 'badHabits', id);
-    const { identityName, ...cleanFields } = fields; // Exclude identityName if passed
+    const cleanFields = { ...fields };
+    delete cleanFields.identityName; // Exclude identityName if passed
     await updateDoc(docRef, cleanFields);
   },
 

@@ -20,15 +20,21 @@ Object.defineProperty(window, 'matchMedia', {
 // Mock framer-motion using React.createElement for standard JS parsing
 vi.mock('framer-motion', () => {
   const MotionDiv = React.forwardRef(({ children, ...props }, ref) => {
-    const { 
-      layout, initial, animate, exit, transition, 
-      hoverLift, whileHover, whileTap, variants, style, ...validProps 
-    } = props;
+    const validProps = { ...props };
+    delete validProps.layout;
+    delete validProps.initial;
+    delete validProps.animate;
+    delete validProps.exit;
+    delete validProps.transition;
+    delete validProps.hoverLift;
+    delete validProps.whileHover;
+    delete validProps.whileTap;
+    delete validProps.variants;
     
     // If animate is a styling object, merge it into DOM style so assertions can read it
     const mergedStyle = {
-      ...style,
-      ...(animate && typeof animate === 'object' ? animate : {})
+      ...props.style,
+      ...(props.animate && typeof props.animate === 'object' ? props.animate : {})
     };
     
     return React.createElement('div', { ref, style: mergedStyle, ...validProps }, children);
@@ -36,7 +42,11 @@ vi.mock('framer-motion', () => {
   MotionDiv.displayName = 'MotionDiv';
 
   const MotionButton = React.forwardRef(({ children, ...props }, ref) => {
-    const { initial, animate, exit, transition, ...validProps } = props;
+    const validProps = { ...props };
+    delete validProps.initial;
+    delete validProps.animate;
+    delete validProps.exit;
+    delete validProps.transition;
     return React.createElement('button', { ref, ...validProps }, children);
   });
   MotionButton.displayName = 'MotionButton';

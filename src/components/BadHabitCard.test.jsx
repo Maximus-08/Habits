@@ -1,6 +1,5 @@
-import React from 'react';
 import { describe, test, expect, vi } from 'vitest';
-import { render, screen, waitFor } from '../utils/test-utils';
+import { render, screen } from '../utils/test-utils';
 import userEvent from '@testing-library/user-event';
 import BadHabitCard from './BadHabitCard';
 import { firestoreService } from '../services/firestoreService';

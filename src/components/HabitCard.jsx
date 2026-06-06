@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, Undo2, Award, Zap, Sparkles, Trash2, Edit } from 'lucide-react';
+import { Check, Undo2, Zap, Trash2, Edit } from 'lucide-react';
 import { useHabits } from '../context/HabitsContext';
-import { Card, Button, InfoTooltip } from './ui/Primitives';
+import { Card } from './ui/Primitives';
 import toast from 'react-hot-toast';
 import { getLocalDateString } from '../utils/dateUtils';
 

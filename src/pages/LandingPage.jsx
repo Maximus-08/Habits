@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { signInWithGoogle, signUpWithEmail, signInWithEmail, logAnalyticsEvent } from '../config/firebase';
 import { isValidEmail, validatePassword, formatFirebaseError } from '../utils/validation';

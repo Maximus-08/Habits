@@ -1,6 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
-import { Calendar, ChevronDown, ChevronUp, Zap, HelpCircle } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Calendar, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import { useHabits } from '../context/HabitsContext';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/Primitives';
 import { getLocalDateString } from '../utils/dateUtils';
@@ -18,7 +17,7 @@ export default function Heatmap() {
   const today = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => getLocalDateString(today), [today]);
 
-  const { dates, columns } = useMemo(() => {
+  const { columns } = useMemo(() => {
     const endDate = new Date(today);
     const totalDays = numWeeks * DAYS_IN_WEEK;
     const startDate = new Date(endDate);
@@ -39,7 +38,7 @@ export default function Heatmap() {
       cols.push(datesArr.slice(i, i + DAYS_IN_WEEK));
     }
 
-    return { dates: datesArr, columns: cols };
+    return { columns: cols };
   }, [numWeeks, today]);
 
   const completionsByDate = useMemo(() => {
@@ -56,11 +55,10 @@ export default function Heatmap() {
     }, {});
   }, [completions]);
 
-  const { totalVotes, twoMinVotes, standardVotes } = useMemo(() => {
+  const { twoMinVotes, standardVotes } = useMemo(() => {
     const total = completions.length;
     const twoMin = completions.filter(c => c.isTwoMinVersion).length;
     return {
-      totalVotes: total,
       twoMinVotes: twoMin,
       standardVotes: total - twoMin
     };

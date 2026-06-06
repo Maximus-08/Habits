@@ -1,22 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useHabits } from '../context/HabitsContext';
-import { Card, CardHeader, CardTitle, CardContent, Button, Textarea, Slider } from '../components/ui/Primitives';
-import { FileText, ClipboardCheck, AlertCircle, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Card, CardContent, Button, Textarea, Slider } from '../components/ui/Primitives';
+import { FileText, ClipboardCheck, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getWeekNumber } from '../utils/dateUtils';
 
 export default function WeeklyReview() {
   const navigate = useNavigate();
   const { weeklyReviews, saveWeeklyReview, currentUser, initialSyncCompleted } = useHabits();
 
-  // Determine current year & week number
-  const getWeekNumber = (d) => {
-    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-    var yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
-    var weekNo = Math.ceil(( ( (d - yearStart) / 86400000) + 1)/7);
-    return weekNo;
-  };
 
   const today = new Date();
   const currentYear = today.getFullYear();
