@@ -43,7 +43,7 @@ describe('aiService - Gemini Coach Suggestion Engine', () => {
 
     const res = await fetchOnboardingSuggestions('Athlete', 'Morning Routine');
     expect(mockConstructor).not.toHaveBeenCalled();
-    expect(res.stackedHabit).toBe('After I drink my first glass of water in the morning');
+    expect(res.stackedHabit).toBe("Right after you gulp down your first glass of morning water, let's do this");
   });
 
   test('should return suggestions from Gemini when API key is present and call is successful', async () => {
@@ -110,6 +110,6 @@ describe('aiService - Gemini Coach Suggestion Engine', () => {
     mockGenerateContent.mockRejectedValue(new Error('API quota limit exceeded'));
 
     const res = await fetchOnboardingSuggestions('Athlete', 'Morning Routine');
-    expect(res.stackedHabit).toBe('After I drink my first glass of water in the morning');
+    expect(res.stackedHabit).toBe("Right after you gulp down your first glass of morning water, let's do this");
   });
 });

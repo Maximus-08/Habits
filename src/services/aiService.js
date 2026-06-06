@@ -26,32 +26,32 @@ export function _resetClient() {
 export function getLocalOnboardingSuggestions(identityName = "") {
   const name = identityName.toLowerCase();
   let suggestions = {
-    stackedHabit: "After I pour my morning cup of coffee",
-    twoMinRule: "Read 1 page of a book or write 1 sentence",
-    environmentPrep: "Place my notebook open on the desk with a pen next to it before bed",
-    immediateReward: "Tick off my tracker and drink a warm cup of coffee"
+    stackedHabit: "Hey, right after you pour your morning cup of coffee",
+    twoMinRule: "Pop open a book and read just 1 page or write 1 quick sentence. Easy win!",
+    environmentPrep: "Leave your notebook wide open on the desk with a pen right next to it before you head to sleep.",
+    immediateReward: "Boom! Check off your tracker and enjoy that warm cup of coffee."
   };
 
   if (name.includes('athlete') || name.includes('fit') || name.includes('health') || name.includes('runner')) {
     suggestions = {
-      stackedHabit: "After I drink my first glass of water in the morning",
-      twoMinRule: "Do 5 bodyweight squats and 1 stretch",
-      environmentPrep: "Lay out my workout shoes and clothes next to my bed the night before",
-      immediateReward: "Enjoy a cold glass of lemon water or protein shake"
+      stackedHabit: "Right after you gulp down your first glass of morning water, let's do this",
+      twoMinRule: "Drop down and do just 5 quick bodyweight squats and 1 good stretch.",
+      environmentPrep: "Set out your workout shoes and favorite gym gear right next to your bed the night before.",
+      immediateReward: "Heck yeah! Reward yourself with a crisp glass of lemon water or a protein shake."
     };
   } else if (name.includes('writer') || name.includes('creative') || name.includes('book') || name.includes('journal')) {
     suggestions = {
-      stackedHabit: "After I close my laptop screen at the end of my workday",
-      twoMinRule: "Write 10 words or sketch for 2 minutes",
-      environmentPrep: "Leave my journal open on my favorite desk spot with a pilot pen",
-      immediateReward: "Listen to 1 favorite ambient track with headphones"
+      stackedHabit: "Right after you shut your laptop screen to wrap up the workday",
+      twoMinRule: "Simply write down 10 words or doodle a sketch for 2 quick minutes.",
+      environmentPrep: "Leave your journal resting open on your favorite desk spot with a pilot pen ready to go.",
+      immediateReward: "Great job. Put on your headphones and chill out to your favorite ambient track."
     };
   } else if (name.includes('mind') || name.includes('zen') || name.includes('calm') || name.includes('meditat')) {
     suggestions = {
-      stackedHabit: "After I brush my teeth in the morning",
-      twoMinRule: "Sit in silence and take 3 deep breaths",
-      environmentPrep: "Put a meditation cushion in the quiet corner of the bedroom",
-      immediateReward: "Gently stretch my shoulders and smile for 5 seconds"
+      stackedHabit: "Hey, right after you finish brushing your teeth in the morning",
+      twoMinRule: "Find a quiet spot, sit comfortably, and take 3 slow, deep breaths.",
+      environmentPrep: "Plop a comfy meditation cushion in a quiet, cozy corner of your bedroom.",
+      immediateReward: "Awesome. Gently roll your shoulders back and give yourself a big smile."
     };
   }
   return suggestions;
@@ -65,30 +65,30 @@ export function getLocalEnvironmentSuggestions(type, habitName = "") {
   
   if (type === 'engine') {
     if (hName.includes('exercise') || hName.includes('workout') || hName.includes('gym')) {
-      return { suggestion: "Unroll exercise mat in living room and stack workout clothes directly on coffee table." };
+      return { suggestion: "Lay out your exercise mat in the living room and pile your gym clothes right on the coffee table!" };
     } else if (hName.includes('write') || hName.includes('journal') || hName.includes('study')) {
-      return { suggestion: "Place open notebook, pilot pen, and glasses on empty desk. Turn laptop completely off." };
+      return { suggestion: "Leave your notebook open, pilot pen ready, and glasses set out on an empty desk." };
     } else if (hName.includes('read') || hName.includes('book')) {
-      return { suggestion: "Put bookmark-opened book on pillow. Remove charging cords from sleeping area." };
+      return { suggestion: "Place your book open on your pillow and stash your phone charger in another room." };
     } else if (hName.includes('meditat') || hName.includes('breath') || hName.includes('yoga')) {
-      return { suggestion: "Place clean cushion in center of quiet bedroom corner with an ambient candle." };
+      return { suggestion: "Set a comfortable cushion in the center of a quiet room with a calming candle nearby." };
     } else {
-      return { suggestion: `Set out materials for ${habitName} in clear sight before your stacked routine trigger occurs.` };
+      return { suggestion: `Hey, try setting out your ${habitName} gear in plain sight before your routine starts!` };
     }
   } else {
     // bad habit brakes suggestions
-    let invisible = "Keep trigger cues inside drawers, boxes, or other rooms.";
-    let difficult = "Establish a friction obstacle or commitment device requiring 2+ minutes to reverse.";
+    let invisible = "Keep trigger cues tucked away inside drawers, opaque boxes, or other rooms.";
+    let difficult = "Set up a physical barrier or lock that takes at least 2 minutes to undo.";
 
     if (hName.includes('snack') || hName.includes('food') || hName.includes('sugar') || hName.includes('cookie')) {
-      invisible = "Move cookie jars and chocolates into top pantry cabinets inside opaque boxes.";
-      difficult = "Lock pantry cupboards after 9 PM. Put keys in hallway drawer.";
+      invisible = "Tuck those cookie jars and sweet treats away in top cabinets inside dark boxes.";
+      difficult = "Lock up the pantry after 9 PM and leave the keys in a drawer down the hall.";
     } else if (hName.includes('scroll') || hName.includes('phone') || hName.includes('social') || hName.includes('screen')) {
-      invisible = "Store mobile charger in kitchen. Keep phone out of bedtime bedroom.";
-      difficult = "Turn off phone completely at 9:30 PM and set router to auto-shutoff.";
+      invisible = "Leave your phone charger in the kitchen—keep screens completely out of the bedroom.";
+      difficult = "Turn your phone off at 9:30 PM and set a timer to shut off the home router.";
     } else if (hName.includes('tv') || hName.includes('netflix') || hName.includes('show') || hName.includes('game')) {
-      invisible = "Put TV remote inside a closed drawer or wardrobe under sheets.";
-      difficult = "Unplug TV power supply from plug point after turning it off.";
+      invisible = "Tuck the TV remote away inside a closed drawer or under a heavy blanket.";
+      difficult = "Unplug the TV power cord from the wall outlet every time you turn it off.";
     }
     
     return {
@@ -116,8 +116,11 @@ export async function fetchOnboardingSuggestions(identityName, habitTitle) {
     const prompt = `You are an expert behavior change coach specializing in James Clear's "Atomic Habits" philosophy.
 The user is building a habit system for their identity: "${identityName}" and habit: "${habitTitle}".
 Based on this, generate tailored recommendations for their habit loop.
+
+Style Guide: Use a warm, friendly, informal, and deeply personal tone (like a supportive friend or casual coach talking directly to them). Avoid sounding overly formal, academic, or robotic.
+
 The recommendations must fit the following format:
-1. Stacked Routine (1st Law: Make it Obvious) - An anchor trigger: e.g., "After I [current habit/anchor], I will [new habit]".
+1. Stacked Routine (1st Law: Make it Obvious) - An anchor trigger: e.g., "After I [current habit/anchor], I'm going to [new habit]".
 2. Environment Prep (3rd Law: Make it Easy) - How to prime their physical environment to reduce friction: e.g., "Place [materials] in clear sight on [location]".
 3. Two-Minute Rule (3rd Law: Make it Easy) - A simplified starter version of the habit that takes less than 2 minutes: e.g., "Read 1 page" or "Do 5 bodyweight squats".
 4. Immediate Reward (4th Law: Make it Satisfying) - A quick, simple reward to enjoy immediately after completion.
@@ -159,7 +162,7 @@ export async function fetchEnvironmentSuggestions(type, habitName) {
       const prompt = `You are an expert behavior change coach specializing in James Clear's "Atomic Habits" philosophy.
 The user wants to prepare their physical environment to make the following habit easy and obvious: "${habitName}".
 Suggest ONE highly specific, low-friction action to prep their environment (space preparation strategy) to trigger this habit.
-Keep the suggestion concise (under 20 words) and direct.
+Keep the suggestion concise (under 20 words), direct, and written in a warm, informal, and personal tone (like a friendly, supportive companion talking directly to them).
 You MUST respond with a raw JSON object and nothing else. The JSON object must have exactly this key:
 - "suggestion": string
 
@@ -175,7 +178,7 @@ The user wants to establish environment adjustments/brakes to stop a bad habit: 
 Provide two specific recommendations:
 1. Make it Invisible: How to hide the trigger cue or put it out of sight.
 2. Make it Difficult: How to add physical friction or a commitment device (taking 2+ minutes to reverse) to stop the habit.
-Keep each suggestion concise (under 20 words) and direct.
+Keep each suggestion concise (under 20 words), direct, and written in a warm, informal, and personal tone (like a friendly, supportive companion talking directly to them).
 You MUST respond with a raw JSON object and nothing else. The JSON object must have exactly these keys:
 - "invisibleStrategy": string
 - "difficultStrategy": string

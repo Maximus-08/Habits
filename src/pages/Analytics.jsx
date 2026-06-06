@@ -5,6 +5,7 @@ import {
   ResponsiveContainer, LineChart, Line, Legend
 } from 'recharts';
 import { useHabits } from '../context/HabitsContext';
+import { getLocalDateString } from '../utils/dateUtils';
 import { Card, CardHeader, CardTitle, CardContent, Button } from '../components/ui/Primitives';
 import { ArrowLeft, Award, ShieldAlert, Sparkles, TrendingUp, Calendar, FileText } from 'lucide-react';
 
@@ -56,7 +57,7 @@ export default function Analytics() {
     for (let i = 13; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
-      const dStr = d.toISOString().split('T')[0];
+      const dStr = getLocalDateString(d);
 
       // Get count of completions on this day
       const dayCompletions = completions.filter(c => c.dateNormalized === dStr).length;

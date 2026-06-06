@@ -135,7 +135,7 @@ describe('Onboarding Wizard Flow', () => {
     const stackedInput = screen.getByPlaceholderText('e.g. After I drink my morning glass of water');
     const prepInput = screen.getByPlaceholderText('e.g. Lay out exercise mat next to the coffee table before bed');
     
-    expect(stackedInput.value).toBe('After I close my laptop screen at the end of my workday');
-    expect(prepInput.value).toBe('Leave my journal open on my favorite desk spot with a pilot pen');
+    expect(stackedInput.value).toBe("Right after you shut your laptop screen to wrap up the workday");
+    expect(prepInput.value).toBe("Leave your journal resting open on your favorite desk spot with a pilot pen ready to go.");
   });
 });
