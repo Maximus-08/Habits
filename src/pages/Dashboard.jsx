@@ -95,6 +95,13 @@ export default function Dashboard() {
   // Active identity filtering (default: All)
   const [filterIdentityId, setFilterIdentityId] = useState('all');
 
+  // Reset filter if active identity is deleted
+  useEffect(() => {
+    if (filterIdentityId !== 'all' && !identities.some(i => i.id === filterIdentityId)) {
+      setFilterIdentityId('all');
+    }
+  }, [identities, filterIdentityId]);
+
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
@@ -116,6 +123,16 @@ export default function Dashboard() {
   const handleSaveIdentity = async (e) => {
     e.preventDefault();
     if (!idName.trim()) return;
+    
+    // Check for duplicate name
+    const isDuplicate = identities.some(i => 
+      (!editingIdentity || i.id !== editingIdentity.id) && 
+      i.name.trim().toLowerCase() === idName.trim().toLowerCase()
+    );
+    if (isDuplicate) {
+      toast.error("An identity with this name already exists. Focus on refining your current card!");
+      return;
+    }
     
     setSavingIdentity(true);
     try {
@@ -161,10 +178,8 @@ export default function Dashboard() {
     e.preventDefault();
     if (!hTitle.trim() || !hIdentityId) return;
 
-    const targetIdentity = identities.find(i => i.id === hIdentityId);
     const habitData = {
       identityId: hIdentityId,
-      identityName: targetIdentity ? targetIdentity.name : 'Unknown Identity',
       title: hTitle,
       category: hCategory,
       time: hTime,
@@ -237,12 +252,10 @@ export default function Dashboard() {
     e.preventDefault();
     if (!bhName.trim() || !bhIdentityId) return;
 
-    const targetIdentity = identities.find(i => i.id === bhIdentityId);
     setSavingBadHabit(true);
     try {
       await addBadHabit({
         identityId: bhIdentityId,
-        identityName: targetIdentity ? targetIdentity.name : 'Unknown Identity',
         name: bhName,
         trigger: bhTrigger,
         invisibleStrategy: bhInvisible,

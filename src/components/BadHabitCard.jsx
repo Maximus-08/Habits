@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldAlert, RefreshCw, EyeOff, Lock, Trash2, Calendar } from 'lucide-react';
 import { useHabits } from '../context/HabitsContext';
@@ -7,21 +7,28 @@ import toast from 'react-hot-toast';
 import { getLocalDateString } from '../utils/dateUtils';
 
 export default function BadHabitCard({ badHabit, onDelete }) {
-  const { getDaysFree, logRelapse } = useHabits();
+  const { getDaysFree, logRelapse, identities } = useHabits();
   const [modalOpen, setModalOpen] = useState(false);
   const [triggerDetail, setTriggerDetail] = useState('');
   const [envAdjustment, setEnvAdjustment] = useState('');
   const [dateOverride, setDateOverride] = useState(''); // Allow logging past lapses
   const [showHistory, setShowHistory] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   const daysFree = getDaysFree(badHabit);
+  
+  const targetIdentity = identities.find(i => i.id === badHabit.identityId);
+  const identityName = targetIdentity ? targetIdentity.name : 'Identity';
 
   const handleSubmitRelapse = async (e) => {
     e.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    
     const date = dateOverride ? new Date(dateOverride).toISOString() : new Date().toISOString();
     
-    setSubmitting(true);
     try {
       await logRelapse(badHabit.id, {
         triggerDetail,
@@ -37,6 +44,7 @@ export default function BadHabitCard({ badHabit, onDelete }) {
       console.error(error);
       toast.error(error.message || "Failed to log relapse");
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -49,7 +57,7 @@ export default function BadHabitCard({ badHabit, onDelete }) {
             <div className="flex items-start justify-between">
               <div>
                 <span className="text-[10px] uppercase font-mono tracking-widest text-primary bg-hoverBg px-2 py-0.5 rounded border border-border/50">
-                  {badHabit.identityName} • Anti-Habit
+                  {identityName} • Anti-Habit
                 </span>
                 <h3 className="text-lg font-bold font-serif text-text mt-2">{badHabit.name}</h3>
               </div>

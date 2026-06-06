@@ -174,7 +174,7 @@ export default function EnvironmentDesign() {
                   <CardHeader className="py-3 flex flex-row items-center justify-between">
                     <div>
                       <span className="text-[10px] uppercase font-mono tracking-wider text-success bg-success/10 px-2 py-0.5 rounded">
-                        {habit.identityName}
+                        {identities.find(i => i.id === habit.identityId)?.name || 'Identity'}
                       </span>
                       <CardTitle className="text-base font-bold text-text mt-1">{habit.title}</CardTitle>
                     </div>
@@ -251,7 +251,7 @@ export default function EnvironmentDesign() {
                   <CardHeader className="py-3 flex flex-row items-center justify-between">
                     <div>
                       <span className="text-[10px] uppercase font-mono tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded">
-                        {bh.identityName}
+                        {identities.find(i => i.id === bh.identityId)?.name || 'Identity'}
                       </span>
                       <CardTitle className="text-base font-bold text-text mt-1">{bh.name}</CardTitle>
                     </div>

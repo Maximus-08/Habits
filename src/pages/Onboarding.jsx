@@ -20,8 +20,8 @@ export default function Onboarding() {
   
   const [habitTitle, setHabitTitle] = useState('');
   const [category, setCategory] = useState(CATEGORIES[0]);
-  const [time, setTime] = useState('08:00 AM');
-  const [location, setLocation] = useState('My Desk');
+  const [time, setTime] = useState('');
+  const [location, setLocation] = useState('');
   const [stackedHabit, setStackedHabit] = useState('');
   const [twoMinRule, setTwoMinRule] = useState('');
   const [environmentPrep, setEnvironmentPrep] = useState('');
@@ -103,7 +103,6 @@ export default function Onboarding() {
       // 2. Save Habit linked to this Identity
       await addHabit({
         identityId: identityRes.id,
-        identityName: identityRes.name,
         title: habitTitle,
         description: `Core daily routine supporting my identity as ${identityRes.name}.`,
         category,
@@ -275,10 +274,10 @@ export default function Onboarding() {
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-text uppercase">Time & Location</label>
+                        <label className="text-xs font-semibold text-text uppercase">Time & Location (Optional)</label>
                         <div className="flex gap-1.5">
-                          <Input value={time} onChange={(e) => setTime(e.target.value)} placeholder="07:30 AM" className="text-xs px-2" />
-                          <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Living Room" className="text-xs px-2" />
+                          <Input value={time} onChange={(e) => setTime(e.target.value)} placeholder="07:30 AM (Optional)" className="text-xs px-2" />
+                          <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Living Room (Optional)" className="text-xs px-2" />
                         </div>
                       </div>
                     </div>

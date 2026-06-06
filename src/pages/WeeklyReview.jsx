@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 
 export default function WeeklyReview() {
   const navigate = useNavigate();
-  const { weeklyReviews, saveWeeklyReview } = useHabits();
+  const { weeklyReviews, saveWeeklyReview, currentUser, initialSyncCompleted } = useHabits();
 
   // Determine current year & week number
   const getWeekNumber = (d) => {
@@ -43,9 +43,11 @@ export default function WeeklyReview() {
   const [nextWeek, setNextWeek] = useState('');
   const [status, setStatus] = useState('draft'); // 'draft' or 'completed'
   const [submitting, setSubmitting] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Load existing review if present
   useEffect(() => {
+    if (isInitialized || !initialSyncCompleted) return;
     const existingReview = weeklyReviews.find(r => r.id === reviewId);
     if (existingReview) {
       setSatisfaction(existingReview.satisfaction ?? 7);
@@ -55,7 +57,8 @@ export default function WeeklyReview() {
       setNextWeek(existingReview.reflection?.nextWeek || '');
       setStatus(existingReview.status || 'draft');
     }
-  }, [weeklyReviews, reviewId]);
+    setIsInitialized(true);
+  }, [weeklyReviews, reviewId, initialSyncCompleted, isInitialized]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -64,7 +67,7 @@ export default function WeeklyReview() {
     try {
       const reviewData = {
         id: reviewId,
-        userId: "user_default",
+        userId: currentUser?.uid || "user_default",
         year: currentYear,
         weekNumber: currentWeekNumber,
         satisfaction,

@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, signOutUser, db } from '../config/firebase';
+import { auth, signOutUser } from '../config/firebase';
 import { firestoreService } from '../services/firestoreService';
-import { doc, setDoc, deleteDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
+import { runDatabaseCleanup } from '../utils/dbCleanup';
 import toast from 'react-hot-toast';
 import { getLocalDateString } from '../utils/dateUtils';
 
@@ -10,23 +10,6 @@ const HabitsContext = createContext(null);
 
 import { LEVELS, calculateLevelFromVotes } from '../utils/constants';
 export { LEVELS };
-
-const isSeedMock = (item) => {
-  if (!item) return false;
-  const id = item.id || "";
-  return (
-    id === "id_athlete" ||
-    id === "id_writer" ||
-    id === "habit_workout" ||
-    id === "habit_write" ||
-    id === "bad_snack" ||
-    id === "bad_scroll" ||
-    id.startsWith("c_workout_") ||
-    id.startsWith("c_write_") ||
-    item.userId === "user_default" ||
-    item.isSeed === true
-  );
-};
 
 const withTimeout = (promise, ms = 4000) => {
   let timeoutId;
@@ -44,12 +27,10 @@ export const HabitsProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [dbError, setDbError] = useState(false);
-  const [isCleaningUp, setIsCleaningUpState] = useState(false);
-  const isCleaningUpRef = useRef(false);
-  const setIsCleaningUp = useCallback((val) => {
-    isCleaningUpRef.current = val;
-    setIsCleaningUpState(val);
-  }, []);
+  const [initialSyncCompleted, setInitialSyncCompleted] = useState(false);
+  
+  // Track cleanup loading state (from console triggers)
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
 
   const [userProfile, setUserProfile] = useState({});
   const [identities, setIdentities] = useState([]);
@@ -58,14 +39,15 @@ export const HabitsProvider = ({ children }) => {
   const [completions, setCompletions] = useState([]);
   const [weeklyReviews, setWeeklyReviews] = useState([]);
   const [selectedDate, setSelectedDate] = useState(getLocalDateString());
-  const cleanupPerformedRef = useRef(false);
+  
+  // Ref to prevent unsubscribing & resubscribing on token refreshes or wake-ups
+  const subscribedUserIdRef = useRef(null);
 
-  // Client-Side Deduplication & Seed Mock Filtering
+  // Client-Side Deduplication
   const uniqueIdentities = useMemo(() => {
     const seen = new Set();
     const unique = [];
     identities.forEach(item => {
-      if (isSeedMock(item)) return;
       const name = (item.name || "").trim().toLowerCase();
       if (name && !seen.has(name)) {
         seen.add(name);
@@ -79,8 +61,7 @@ export const HabitsProvider = ({ children }) => {
     const seen = new Set();
     const unique = [];
     habits.forEach(item => {
-      if (isSeedMock(item)) return;
-      const key = `${(item.title || "").trim().toLowerCase()}_${(item.identityName || "").trim().toLowerCase()}`;
+      const key = `${(item.title || "").trim().toLowerCase()}_${item.identityId}`;
       if (item.title && !seen.has(key)) {
         seen.add(key);
         unique.push(item);
@@ -93,8 +74,7 @@ export const HabitsProvider = ({ children }) => {
     const seen = new Set();
     const unique = [];
     badHabits.forEach(item => {
-      if (isSeedMock(item)) return;
-      const key = `${(item.name || "").trim().toLowerCase()}_${(item.identityName || "").trim().toLowerCase()}`;
+      const key = `${(item.name || "").trim().toLowerCase()}_${item.identityId}`;
       if (item.name && !seen.has(key)) {
         seen.add(key);
         unique.push(item);
@@ -107,7 +87,6 @@ export const HabitsProvider = ({ children }) => {
     const seen = new Set();
     const unique = [];
     weeklyReviews.forEach(item => {
-      if (isSeedMock(item)) return;
       const key = item.id || `${item.year}-${item.weekNumber}`;
       if (key && !seen.has(key)) {
         seen.add(key);
@@ -121,7 +100,6 @@ export const HabitsProvider = ({ children }) => {
     const seen = new Set();
     const unique = [];
     completions.forEach(item => {
-      if (isSeedMock(item)) return;
       const key = `${item.habitId || ''}_${item.dateNormalized || ''}`;
       if (item.habitId && !seen.has(key)) {
         seen.add(key);
@@ -131,232 +109,9 @@ export const HabitsProvider = ({ children }) => {
     return unique;
   }, [completions]);
 
-  const cleanupDuplicateFirestoreData = useCallback(async (userId, currentData, dryRun = false) => {
-    if (isCleaningUpRef.current) return;
-    setIsCleaningUp(true);
-    try {
-      console.log("Starting self-healing database cleanup for user:", userId, dryRun ? "[DRY RUN]" : "");
-
-      const {
-        identities: identityDocs = [],
-        habits: habitDocs = [],
-        badHabits: badHabitDocs = [],
-        completions: completionDocs = [],
-        weeklyReviews: reviewDocs = []
-      } = currentData || {};
-
-      // 1. Identities cleanup and building identity ID mapping
-      const identityGroups = {};
-      const identitiesToDelete = [];
-      const identityIdMapping = {};
-
-      identityDocs.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
-      identityDocs.forEach(docData => {
-        const normName = (docData.name || "").trim().toLowerCase();
-        if (!normName) return;
-        if (!identityGroups[normName]) {
-          identityGroups[normName] = docData;
-          identityIdMapping[docData.id] = docData.id;
-        } else {
-          identitiesToDelete.push(docData);
-          identityIdMapping[docData.id] = identityGroups[normName].id;
-        }
-      });
-
-      // Keep track of active/valid identity IDs
-      const keptIdentityIds = new Set(
-        identityDocs
-          .filter(i => !identitiesToDelete.some(itd => itd.id === i.id))
-          .map(i => i.id)
-      );
-
-      // 2. Habits cleanup (deduplication + orphan removal)
-      const habitGroups = {};
-      const habitsToDelete = [];
-      const habitMapping = {};
-      const habitsToUpdate = [];
-
-      habitDocs.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
-      habitDocs.forEach(docData => {
-        // Remap identityId to its canonical form if mapped
-        if (identityIdMapping[docData.identityId]) {
-          const canonicalId = identityIdMapping[docData.identityId];
-          if (docData.identityId !== canonicalId) {
-            docData.identityId = canonicalId;
-            docData._identityIdChanged = true;
-          }
-        }
-
-        // If the identity it belongs to does not exist, it is orphaned and must be deleted
-        if (!keptIdentityIds.has(docData.identityId)) {
-          habitsToDelete.push(docData);
-          return;
-        }
-
-        const normTitle = (docData.title || "").trim().toLowerCase();
-        const normIdName = (docData.identityName || "").trim().toLowerCase();
-        const key = `${normTitle}_${normIdName}`;
-        if (!normTitle) return;
-
-        if (!habitGroups[key]) {
-          habitGroups[key] = docData;
-          habitMapping[docData.id] = docData.id;
-
-          const keptIdentity = identityGroups[normIdName];
-          if (keptIdentity && docData.identityId !== keptIdentity.id) {
-            docData.identityId = keptIdentity.id;
-            docData._identityIdChanged = true;
-          }
-          if (docData._identityIdChanged) {
-            habitsToUpdate.push({ id: docData.id, identityId: docData.identityId });
-          }
-        } else {
-          habitsToDelete.push(docData);
-          habitMapping[docData.id] = habitGroups[key].id;
-        }
-      });
-
-      // 3. Bad Habits cleanup (deduplication + orphan removal)
-      const badHabitGroups = {};
-      const badHabitsToDelete = [];
-      const badHabitMapping = {};
-      const badHabitsToUpdate = [];
-
-      badHabitDocs.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
-      badHabitDocs.forEach(docData => {
-        // Remap identityId to its canonical form if mapped
-        if (identityIdMapping[docData.identityId]) {
-          const canonicalId = identityIdMapping[docData.identityId];
-          if (docData.identityId !== canonicalId) {
-            docData.identityId = canonicalId;
-            docData._identityIdChanged = true;
-          }
-        }
-
-        // If the identity it belongs to does not exist, it is orphaned and must be deleted
-        if (!keptIdentityIds.has(docData.identityId)) {
-          badHabitsToDelete.push(docData);
-          return;
-        }
-
-        const normName = (docData.name || "").trim().toLowerCase();
-        const normIdName = (docData.identityName || "").trim().toLowerCase();
-        const key = `${normName}_${normIdName}`;
-        if (!normName) return;
-
-        if (!badHabitGroups[key]) {
-          badHabitGroups[key] = docData;
-          badHabitMapping[docData.id] = docData.id;
-
-          const keptIdentity = identityGroups[normIdName];
-          if (keptIdentity && docData.identityId !== keptIdentity.id) {
-            docData.identityId = keptIdentity.id;
-            docData._identityIdChanged = true;
-          }
-          if (docData._identityIdChanged) {
-            badHabitsToUpdate.push({ id: docData.id, identityId: docData.identityId });
-          }
-        } else {
-          badHabitsToDelete.push(docData);
-          badHabitMapping[docData.id] = badHabitGroups[key].id;
-        }
-      });
-
-      // 4. Completions cleanup (deduplication + orphan removal)
-      const completionGroups = {};
-      const completionsToDelete = [];
-      const completionsToUpdate = [];
-
-      completionDocs.forEach(comp => {
-        // Remap identityId to its canonical form if mapped
-        if (identityIdMapping[comp.identityId]) {
-          const canonicalId = identityIdMapping[comp.identityId];
-          if (comp.identityId !== canonicalId) {
-            comp.identityId = canonicalId;
-            comp._identityIdChanged = true;
-          }
-        }
-
-        // If the identity it belongs to does not exist, it is orphaned and must be deleted
-        if (!keptIdentityIds.has(comp.identityId)) {
-          completionsToDelete.push(comp);
-          return;
-        }
-
-        let needsUpdate = comp._identityIdChanged || false;
-        let newHabitId = comp.habitId;
-        let newIdentityId = comp.identityId;
-
-        if (habitMapping[comp.habitId] && habitMapping[comp.habitId] !== comp.habitId) {
-          newHabitId = habitMapping[comp.habitId];
-          needsUpdate = true;
-        }
-
-        const key = `${newHabitId}_${comp.dateNormalized}`;
-        if (!completionGroups[key]) {
-          completionGroups[key] = comp;
-          if (needsUpdate) {
-            completionsToUpdate.push({ id: comp.id, habitId: newHabitId, identityId: newIdentityId });
-          }
-        } else {
-          completionsToDelete.push(comp);
-        }
-      });
-
-      // 5. Reviews cleanup
-      const reviewsToDelete = reviewDocs.filter(r => r.userId === 'user_default' || r.isSeed === true);
-
-      // 6. Build and commit operations in chunked batches
-      const operations = [];
-      identitiesToDelete.forEach(i => operations.push({ type: 'delete', ref: doc(db, 'users', userId, 'identities', i.id) }));
-      habitsToDelete.forEach(h => operations.push({ type: 'delete', ref: doc(db, 'users', userId, 'habits', h.id) }));
-      badHabitsToDelete.forEach(bh => operations.push({ type: 'delete', ref: doc(db, 'users', userId, 'badHabits', bh.id) }));
-      completionsToDelete.forEach(c => operations.push({ type: 'delete', ref: doc(db, 'users', userId, 'completions', c.id) }));
-      reviewsToDelete.forEach(r => operations.push({ type: 'delete', ref: doc(db, 'users', userId, 'weeklyReviews', r.id) }));
-
-      habitsToUpdate.forEach(h => operations.push({ type: 'update', ref: doc(db, 'users', userId, 'habits', h.id), data: { identityId: h.identityId } }));
-      badHabitsToUpdate.forEach(bh => operations.push({ type: 'update', ref: doc(db, 'users', userId, 'badHabits', bh.id), data: { identityId: bh.identityId } }));
-      completionsToUpdate.forEach(c => operations.push({ type: 'update', ref: doc(db, 'users', userId, 'completions', c.id), data: { habitId: c.habitId, identityId: c.identityId } }));
-
-      if (dryRun) {
-        console.log("[Database Cleanup] [DRY RUN] Skipping actual writes.");
-      } else {
-        const chunkSize = 400;
-        for (let i = 0; i < operations.length; i += chunkSize) {
-          const chunk = operations.slice(i, i + chunkSize);
-          const batch = writeBatch(db);
-          chunk.forEach(op => {
-            if (op.type === 'delete') {
-              batch.delete(op.ref);
-            } else if (op.type === 'update') {
-              batch.update(op.ref, op.data);
-            }
-          });
-          await batch.commit();
-        }
-
-        // Recalculate total votes and update user profile (excluding mock completions)
-        const finalCompletionsCount = completionDocs.filter(c => !isSeedMock(c)).length - completionsToDelete.filter(c => !isSeedMock(c)).length;
-        const activeLevel = calculateLevelFromVotes(finalCompletionsCount);
-
-        await setDoc(doc(db, 'users', userId), {
-          totalVotes: finalCompletionsCount,
-          level: activeLevel,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-
-        console.log("Firestore database cleanup completed successfully.");
-      }
-    } catch (error) {
-      console.error("Error during database cleanup:", error);
-      throw error;
-    } finally {
-      setIsCleaningUp(false);
-    }
-  }, [setIsCleaningUp]);
-
   // Auth State Listener and Firestore Data Syncer
   useEffect(() => {
+    let active = true;
     let safetyTimeout = null;
     let unsubProfile = null;
     let unsubIdentities = null;
@@ -382,16 +137,23 @@ export const HabitsProvider = ({ children }) => {
     };
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      setDbError(false);
-
-      if (safetyTimeout) {
-        clearTimeout(safetyTimeout);
-        safetyTimeout = null;
-      }
-      cleanUpCloudListeners();
-
       if (user) {
+        // Optimization: Do not recreate subscriptions if already listening to this user session
+        if (subscribedUserIdRef.current === user.uid) {
+          setCurrentUser(user);
+          return;
+        }
+
+        subscribedUserIdRef.current = user.uid;
+        setCurrentUser(user);
+        setDbError(false);
+
+        if (safetyTimeout) {
+          clearTimeout(safetyTimeout);
+          safetyTimeout = null;
+        }
+        cleanUpCloudListeners();
+
         setAuthLoading(true);
         let profileLoaded = false;
         let identitiesLoaded = false;
@@ -401,11 +163,12 @@ export const HabitsProvider = ({ children }) => {
         const checkLoadComplete = () => {
           if (profileLoaded && identitiesLoaded && habitsLoaded) {
             setAuthLoading(false);
+            setInitialSyncCompleted(true);
           }
         };
 
         const handleSyncError = (err) => {
-          console.error("Firestore error:", err);
+          console.error("Firestore sync error:", err);
           if (!isFallbackActive) {
             isFallbackActive = true;
             cleanUpCloudListeners();
@@ -426,6 +189,7 @@ export const HabitsProvider = ({ children }) => {
 
         firestoreService.ensureUserProfile(user.uid)
           .then(() => {
+            if (!active) return;
             unsubProfile = firestoreService.subscribeUserProfile(
               user.uid, 
               (data) => {
@@ -457,7 +221,9 @@ export const HabitsProvider = ({ children }) => {
           })
           .catch(handleSyncError);
       } else {
-        // Logged out: Clear data state
+        // Logged out: Clear data state and session ref
+        subscribedUserIdRef.current = null;
+        setCurrentUser(null);
         setUserProfile({});
         setIdentities([]);
         setHabits([]);
@@ -465,50 +231,70 @@ export const HabitsProvider = ({ children }) => {
         setCompletions([]);
         setWeeklyReviews([]);
         setAuthLoading(false);
-        cleanupPerformedRef.current = false;
+        setInitialSyncCompleted(false);
       }
     });
 
     return () => {
+      active = false;
       unsubscribeAuth();
       if (safetyTimeout) clearTimeout(safetyTimeout);
       cleanUpCloudListeners();
     };
-  }, [cleanupDuplicateFirestoreData]);
- 
-  // Background self-healing database optimization
+  }, []);
+
+  // Expose a database cleanup trigger function in the developer console
   useEffect(() => {
-    if (!currentUser || authLoading || isCleaningUpRef.current || cleanupPerformedRef.current) return;
-
-    // Check if raw data arrays mismatch with unique deduplicated arrays
-    const keptIdentityIds = new Set(uniqueIdentities.map(i => i.id));
-    const hasDuplicates = (
-      identities.length !== uniqueIdentities.length ||
-      habits.length !== uniqueHabits.length ||
-      badHabits.length !== uniqueBadHabits.length ||
-      completions.length !== uniqueCompletions.length
-    );
-    const hasOrphans = (
-      habits.some(h => !isSeedMock(h) && !keptIdentityIds.has(h.identityId)) ||
-      badHabits.some(bh => !isSeedMock(bh) && !keptIdentityIds.has(bh.identityId)) ||
-      completions.some(c => !isSeedMock(c) && !keptIdentityIds.has(c.identityId))
-    );
-
-    if (hasDuplicates || hasOrphans) {
-      cleanupPerformedRef.current = true;
-      cleanupDuplicateFirestoreData(currentUser.uid, {
-        identities: [...identities],
-        habits: [...habits],
-        badHabits: [...badHabits],
-        completions: [...completions],
-        weeklyReviews: [...weeklyReviews]
-      }).catch(err => {
-        console.warn("Database self-healing skipped/failed:", err);
-      });
+    if (currentUser) {
+      window.runCleanup = async () => {
+        if (isCleaningUp) {
+          console.warn("[Cleanup] Cleanup task already in progress.");
+          return;
+        }
+        setIsCleaningUp(true);
+        try {
+          const res = await runDatabaseCleanup(currentUser.uid);
+          if (res && res.success) {
+            toast.success(`Database optimized! Deleted ${res.deletes} documents, updated ${res.updates} documents.`);
+          } else {
+            toast.error(`Purge failed: ${res?.error || 'Unknown error'}`);
+          }
+        } catch (err) {
+          console.error(err);
+          toast.error("Cleanup runtime error.");
+        } finally {
+          setIsCleaningUp(false);
+        }
+      };
+      console.log("%c[Cleanup] To clean seed data and optimize, type runCleanup() in your dev console.", "color: #2196f3; font-weight: bold;");
+    } else {
+      delete window.runCleanup;
     }
-  }, [currentUser, authLoading, identities, uniqueIdentities, habits, uniqueHabits, badHabits, uniqueBadHabits, completions, uniqueCompletions, weeklyReviews, cleanupDuplicateFirestoreData]);
+    return () => {
+      delete window.runCleanup;
+    };
+  }, [currentUser, isCleaningUp]);
 
-  // Ensure atomic onboarding is flagged only after both identity and a habit are created
+  // Trigger automated weekly cleanup on login
+  useEffect(() => {
+    if (currentUser && userProfile.createdAt && !sessionStorage.getItem(`db_cleaned_${currentUser.uid}`)) {
+      const lastOpt = userProfile.lastOptimizedAt ? new Date(userProfile.lastOptimizedAt) : null;
+      const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+      if (!lastOpt || isNaN(lastOpt.getTime()) || lastOpt < oneWeekAgo) {
+        sessionStorage.setItem(`db_cleaned_${currentUser.uid}`, 'true');
+        console.log("[Cleanup] Triggering weekly automated database optimization...");
+        runDatabaseCleanup(currentUser.uid).catch(err => {
+          console.warn("[Cleanup] Automated cleanup failed:", err);
+        });
+      } else {
+        sessionStorage.setItem(`db_cleaned_${currentUser.uid}`, 'true');
+        console.log("[Cleanup] Database was optimized recently. Skipping automated cleanup.");
+      }
+    }
+  }, [currentUser, userProfile]);
+
+  // Ensure onboarding flag is set if user has setup data
   useEffect(() => {
     if (currentUser && uniqueIdentities.length > 0 && uniqueHabits.length > 0) {
       localStorage.setItem(`atomic_onboarded_${currentUser.uid}`, 'true');
@@ -516,6 +302,19 @@ export const HabitsProvider = ({ children }) => {
   }, [currentUser, uniqueIdentities, uniqueHabits]);
 
   // --- Memoized Precomputations ---
+
+  const completionsIndex = useMemo(() => {
+    const index = new Map();
+    uniqueCompletions.forEach(c => {
+      if (c.habitId) {
+        if (!index.has(c.habitId)) {
+          index.set(c.habitId, new Map());
+        }
+        index.get(c.habitId).set(c.dateNormalized, c);
+      }
+    });
+    return index;
+  }, [uniqueCompletions]);
 
   const identityStrengths = useMemo(() => {
     const result = {};
@@ -533,7 +332,7 @@ export const HabitsProvider = ({ children }) => {
   const identityLevelProgressMap = useMemo(() => {
     const result = {};
     uniqueIdentities.forEach(identity => {
-      const totalVotes = uniqueCompletions.filter(c => c.identityId === identity.id).length;
+      const totalVotes = identity.totalVotes || 0;
       
       let activeLevel = 1;
       for (let i = LEVELS.length - 1; i >= 0; i--) {
@@ -559,7 +358,7 @@ export const HabitsProvider = ({ children }) => {
       };
     });
     return result;
-  }, [uniqueIdentities, uniqueCompletions]);
+  }, [uniqueIdentities]);
 
   const daysFreeMap = useMemo(() => {
     const result = {};
@@ -638,7 +437,7 @@ export const HabitsProvider = ({ children }) => {
   }, [daysFreeMap]);
 
   const getLevelProgress = useCallback(() => {
-    const totalVotes = uniqueCompletions.length;
+    const totalVotes = userProfile.totalVotes || 0;
     const currentLvl = calculateLevelFromVotes(totalVotes);
     
     const currentLevelMeta = LEVELS.find(l => l.level === currentLvl) || LEVELS[0];
@@ -670,9 +469,10 @@ export const HabitsProvider = ({ children }) => {
       minVotes: currentLevelMeta.minVotes,
       maxVotes: nextLevelMeta.minVotes
     };
-  }, [uniqueCompletions]);
+  }, [userProfile]);
 
   const logout = useCallback(async () => {
+    subscribedUserIdRef.current = null;
     setCurrentUser(null);
     setUserProfile({});
     setIdentities([]);
@@ -686,26 +486,24 @@ export const HabitsProvider = ({ children }) => {
   // --- Identity CRUD ---
   const addIdentity = useCallback(async (name, beliefStatement) => {
     if (!currentUser) throw new Error("User must be authenticated to create an identity.");
+    const isDuplicate = uniqueIdentities.some(i => i.name.trim().toLowerCase() === name.trim().toLowerCase());
+    if (isDuplicate) {
+      throw new Error("An identity with this name already exists.");
+    }
     const res = await withTimeout(firestoreService.saveIdentity(currentUser.uid, { name, beliefStatement }));
     return res;
-  }, [currentUser]);
+  }, [currentUser, uniqueIdentities]);
 
   const updateIdentity = useCallback(async (id, fields) => {
     if (!currentUser) return;
-    await withTimeout(firestoreService.updateIdentity(currentUser.uid, id, fields));
-    
-    // Cascade renames
     if (fields.name) {
-      await withTimeout(firestoreService.cascadeIdentityRename(
-        currentUser.uid, 
-        id, 
-        fields.name, 
-        habits, 
-        badHabits, 
-        completions
-      ));
+      const isDuplicate = uniqueIdentities.some(i => i.id !== id && i.name.trim().toLowerCase() === fields.name.trim().toLowerCase());
+      if (isDuplicate) {
+        throw new Error("An identity with this name already exists.");
+      }
     }
-  }, [currentUser, habits, badHabits, completions]);
+    await withTimeout(firestoreService.updateIdentity(currentUser.uid, id, fields));
+  }, [currentUser, uniqueIdentities]);
 
   const deleteIdentity = useCallback(async (id) => {
     if (!currentUser) return;
@@ -715,9 +513,9 @@ export const HabitsProvider = ({ children }) => {
       habits,
       badHabits,
       completions,
-      uniqueCompletions.length
+      userProfile.totalVotes || 0
     ));
-  }, [currentUser, habits, badHabits, completions, uniqueCompletions.length]);
+  }, [currentUser, habits, badHabits, completions, userProfile.totalVotes]);
 
   // --- Habit CRUD ---
   const addHabit = useCallback(async (habitFields) => {
@@ -736,9 +534,9 @@ export const HabitsProvider = ({ children }) => {
       currentUser.uid,
       id,
       completions,
-      uniqueCompletions.length
+      userProfile.totalVotes || 0
     ));
-  }, [currentUser, completions, uniqueCompletions.length]);
+  }, [currentUser, completions, userProfile.totalVotes]);
 
   // --- Bad Habit CRUD ---
   const addBadHabit = useCallback(async (badHabitFields) => {
@@ -768,16 +566,14 @@ export const HabitsProvider = ({ children }) => {
   // --- Completion CRUD ---
   const toggleCompletion = useCallback(async (habitId, dateNormalized, isTwoMinVersion = false, notes = "") => {
     if (!currentUser) return;
-    const targetHabit = uniqueHabits.find(h => h.id === habitId);
     return await withTimeout(firestoreService.toggleCompletion(
       currentUser.uid,
       habitId,
       dateNormalized,
       isTwoMinVersion,
-      notes,
-      targetHabit
+      notes
     ));
-  }, [currentUser, uniqueHabits]);
+  }, [currentUser]);
 
   // --- Weekly Reviews CRUD ---
   const saveWeeklyReview = useCallback(async (reviewFields) => {
@@ -790,16 +586,18 @@ export const HabitsProvider = ({ children }) => {
     currentUser,
     authLoading,
     dbError,
+    initialSyncCompleted,
     isCleaningUp,
     userProfile: {
       ...userProfile,
-      totalVotes: uniqueCompletions.length,
-      level: calculateLevelFromVotes(uniqueCompletions.length)
+      totalVotes: userProfile.totalVotes || 0,
+      level: userProfile.level || 1
     },
     identities: uniqueIdentities,
     habits: uniqueHabits,
     badHabits: uniqueBadHabits,
     completions: uniqueCompletions,
+    completionsIndex,
     weeklyReviews: uniqueWeeklyReviews,
     selectedDate,
     setSelectedDate,
@@ -824,12 +622,14 @@ export const HabitsProvider = ({ children }) => {
     currentUser,
     authLoading,
     dbError,
+    initialSyncCompleted,
     isCleaningUp,
     userProfile,
     uniqueIdentities,
     uniqueHabits,
     uniqueBadHabits,
     uniqueCompletions,
+    completionsIndex,
     uniqueWeeklyReviews,
     selectedDate,
     setSelectedDate,

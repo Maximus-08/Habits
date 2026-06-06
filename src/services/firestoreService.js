@@ -12,6 +12,7 @@ import {
   addDoc,
   writeBatch,
   query,
+  where,
   runTransaction
 } from 'firebase/firestore';
 
@@ -75,7 +76,13 @@ export const firestoreService = {
 
   subscribeCompletions: (userId, callback, onError) => {
     const completionsRef = collection(db, 'users', userId, 'completions');
-    return onSnapshot(completionsRef, (snapshot) => {
+    // Limit to the last 365 days of completions
+    const date = new Date();
+    date.setDate(date.getDate() - 365);
+    const oneYearAgoStr = date.toISOString().split('T')[0];
+    
+    const q = query(completionsRef, where('dateNormalized', '>=', oneYearAgoStr));
+    return onSnapshot(q, (snapshot) => {
       const items = [];
       snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
       callback(items);
@@ -99,6 +106,7 @@ export const firestoreService = {
     const data = {
       name: identity.name,
       beliefStatement: identity.beliefStatement,
+      totalVotes: 0,
       createdAt: new Date().toISOString()
     };
     await setDoc(newDocRef, data);
@@ -162,48 +170,14 @@ export const firestoreService = {
     });
   },
 
-  cascadeIdentityRename: async (userId, identityId, newName, habits, badHabits, completions) => {
-    const updates = [];
-
-    habits.forEach(h => {
-      if (h.identityId === identityId) {
-        updates.push({
-          ref: doc(db, 'users', userId, 'habits', h.id),
-          data: { identityName: newName }
-        });
-      }
-    });
-
-    badHabits.forEach(b => {
-      if (b.identityId === identityId) {
-        updates.push({
-          ref: doc(db, 'users', userId, 'badHabits', b.id),
-          data: { identityName: newName }
-        });
-      }
-    });
-
-    // We intentionally do not loop over and update completions on rename.
-    // Completions don't display identityName and only use identityId.
-
-    const chunkSize = 400;
-    for (let i = 0; i < updates.length; i += chunkSize) {
-      const chunk = updates.slice(i, i + chunkSize);
-      const batch = writeBatch(db);
-      chunk.forEach(op => {
-        batch.update(op.ref, op.data);
-      });
-      await batch.commit();
-    }
-  },
-
   // --- HABIT CRUD ---
 
   saveHabit: async (userId, habit) => {
     const habitsRef = collection(db, 'users', userId, 'habits');
     const newDocRef = doc(habitsRef);
+    const { identityName, ...cleanHabit } = habit; // Exclude identityName
     const data = {
-      ...habit,
+      ...cleanHabit,
       createdAt: new Date().toISOString()
     };
     await setDoc(newDocRef, data);
@@ -212,14 +186,22 @@ export const firestoreService = {
 
   updateHabit: async (userId, id, fields) => {
     const docRef = doc(db, 'users', userId, 'habits', id);
-    await updateDoc(docRef, fields);
+    const { identityName, ...cleanFields } = fields; // Exclude identityName if passed
+    await updateDoc(docRef, cleanFields);
   },
 
   deleteHabit: async (userId, id, completions, totalVotes) => {
     const deletes = [];
 
+    // Find the habit's identityId
+    const habitRef = doc(db, 'users', userId, 'habits', id);
+    const habitSnap = await getDoc(habitRef);
+    if (!habitSnap.exists()) return;
+    const habitData = habitSnap.data();
+    const identityId = habitData.identityId;
+
     // 1. Delete Habit
-    deletes.push(doc(db, 'users', userId, 'habits', id));
+    deletes.push(habitRef);
 
     // 2. Delete all linked completions and calculate votes to subtract
     let deletedCompletionsCount = 0;
@@ -251,6 +233,18 @@ export const firestoreService = {
       level: newLevel,
       updatedAt: new Date().toISOString()
     });
+
+    // 4. Update parent Identity votes
+    if (identityId) {
+      const identityRef = doc(db, 'users', userId, 'identities', identityId);
+      const identitySnap = await getDoc(identityRef);
+      if (identitySnap.exists()) {
+        const identityVotes = identitySnap.data().totalVotes || 0;
+        await updateDoc(identityRef, {
+          totalVotes: Math.max(0, identityVotes - deletedCompletionsCount)
+        });
+      }
+    }
   },
 
   // --- BAD HABIT CRUD ---
@@ -258,8 +252,9 @@ export const firestoreService = {
   saveBadHabit: async (userId, badHabit) => {
     const badHabitsRef = collection(db, 'users', userId, 'badHabits');
     const newDocRef = doc(badHabitsRef);
+    const { identityName, ...cleanBadHabit } = badHabit; // Exclude identityName
     const data = {
-      ...badHabit,
+      ...cleanBadHabit,
       lapses: [],
       createdAt: new Date().toISOString()
     };
@@ -269,7 +264,8 @@ export const firestoreService = {
 
   updateBadHabit: async (userId, id, fields) => {
     const docRef = doc(db, 'users', userId, 'badHabits', id);
-    await updateDoc(docRef, fields);
+    const { identityName, ...cleanFields } = fields; // Exclude identityName if passed
+    await updateDoc(docRef, cleanFields);
   },
 
   deleteBadHabit: async (userId, id) => {
@@ -300,17 +296,33 @@ export const firestoreService = {
 
   // --- COMPLETION VOTE SYSTEM ---
 
-  toggleCompletion: async (userId, habitId, dateNormalized, isTwoMinVersion, notes, habit) => {
+  toggleCompletion: async (userId, habitId, dateNormalized, isTwoMinVersion, notes) => {
     const compDocRef = doc(db, 'users', userId, 'completions', `${habitId}_${dateNormalized}`);
     const userProfileRef = doc(db, 'users', userId);
+    const habitRef = doc(db, 'users', userId, 'habits', habitId);
 
     return await runTransaction(db, async (transaction) => {
       const compSnap = await transaction.get(compDocRef);
       const profileSnap = await transaction.get(userProfileRef);
+      const habitSnap = await transaction.get(habitRef);
+
+      if (!habitSnap.exists()) {
+        throw new Error("Habit system does not exist or has been deleted.");
+      }
+      const habitData = habitSnap.data();
+
+      // Get parent Identity reference
+      const identityRef = doc(db, 'users', userId, 'identities', habitData.identityId);
+      const identitySnap = await transaction.get(identityRef);
 
       let currentVotes = 0;
       if (profileSnap.exists()) {
         currentVotes = profileSnap.data().totalVotes || 0;
+      }
+
+      let identityVotes = 0;
+      if (identitySnap.exists()) {
+        identityVotes = identitySnap.data().totalVotes || 0;
       }
 
       if (compSnap.exists()) {
@@ -324,13 +336,20 @@ export const firestoreService = {
           level: newLevel,
           updatedAt: new Date().toISOString()
         });
+
+        if (identitySnap.exists()) {
+          transaction.update(identityRef, {
+            totalVotes: Math.max(0, identityVotes - 1)
+          });
+        }
+
         return { status: 'removed' };
       } else {
         // Add completion
         const newCompletion = {
           userId,
           habitId,
-          identityId: habit.identityId,
+          identityId: habitData.identityId,
           completedAt: new Date().toISOString(),
           dateNormalized,
           isTwoMinVersion: isTwoMinVersion || false,
@@ -345,6 +364,13 @@ export const firestoreService = {
           level: newLevel,
           updatedAt: new Date().toISOString()
         });
+
+        if (identitySnap.exists()) {
+          transaction.update(identityRef, {
+            totalVotes: identityVotes + 1
+          });
+        }
+
         return { status: 'added', completion: { id: compDocRef.id, ...newCompletion } };
       }
     });

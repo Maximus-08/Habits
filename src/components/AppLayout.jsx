@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 export default function AppLayout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { currentUser, authLoading, dbError, identities, userProfile, logout } = useHabits();
+  const { currentUser, authLoading, dbError, initialSyncCompleted, identities, userProfile, logout } = useHabits();
   
   const isOnboarding = location.pathname === '/onboarding';
   const isLanding = location.pathname === '/';
@@ -87,7 +87,7 @@ export default function AppLayout({ children }) {
 
   // 5. Smart redirect: If no identities are defined and user has never onboarded, force onboarding
   const isOnboardingSubmitted = sessionStorage.getItem('onboarding_submitted') === 'true';
-  if (identities.length === 0 && !isOnboarding && !isOnboardingSubmitted && !hasOnboardedLocal) {
+  if (initialSyncCompleted && identities.length === 0 && !isOnboarding && !isOnboardingSubmitted && !hasOnboardedLocal) {
     return <Navigate to="/onboarding" replace />;
   }
 

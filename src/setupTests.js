@@ -1,0 +1,127 @@
+import '@testing-library/jest-dom';
+import React from 'react';
+import { vi } from 'vitest';
+
+// Mock matchMedia which JSDOM doesn't implement by default
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: vi.fn().mockImplementation(query => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(), // deprecated
+    removeListener: vi.fn(), // deprecated
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+});
+
+// Mock framer-motion using React.createElement for standard JS parsing
+vi.mock('framer-motion', () => ({
+  motion: {
+    div: React.forwardRef(({ children, ...props }, ref) => {
+      const { 
+        layout, initial, animate, exit, transition, 
+        hoverLift, whileHover, whileTap, variants, style, ...validProps 
+      } = props;
+      
+      // If animate is a styling object, merge it into DOM style so assertions can read it
+      const mergedStyle = {
+        ...style,
+        ...(animate && typeof animate === 'object' ? animate : {})
+      };
+      
+      return React.createElement('div', { ref, style: mergedStyle, ...validProps }, children);
+    }),
+    button: React.forwardRef(({ children, ...props }, ref) => {
+      const { initial, animate, exit, transition, ...validProps } = props;
+      return React.createElement('button', { ref, ...validProps }, children);
+    }),
+  },
+  AnimatePresence: ({ children }) => React.createElement(React.Fragment, null, children),
+}));
+
+// Mock recharts
+vi.mock('recharts', () => ({
+  ResponsiveContainer: ({ children }) => React.createElement('div', null, children),
+  RadialBarChart: ({ children }) => React.createElement('div', null, children),
+  RadialBar: () => React.createElement('div'),
+}));
+
+// Mock Firebase Config & Auth
+vi.mock('./config/firebase', () => ({
+  auth: {
+    onAuthStateChanged: vi.fn((cb) => {
+      // Simulate user is logged in
+      cb({ uid: 'mock-user-123', email: 'test@example.com' });
+      return () => {};
+    })
+  },
+  db: {},
+  signOutUser: vi.fn().mockResolvedValue(),
+}));
+
+// Mock Firestore Service functions
+vi.mock('./services/firestoreService', () => {
+  return {
+    firestoreService: {
+      ensureUserProfile: vi.fn().mockResolvedValue({}),
+      subscribeUserProfile: vi.fn((uid, callback) => {
+        callback({ totalVotes: 10, level: 1, lastOptimizedAt: new Date().toISOString() });
+        return () => {};
+      }),
+      subscribeIdentities: vi.fn((uid, callback) => {
+        callback([{ id: 'id-1', name: 'Writer', beliefStatement: 'I write daily', totalVotes: 10 }]);
+        return () => {};
+      }),
+      subscribeHabits: vi.fn((uid, callback) => {
+        callback([{ id: 'habit-1', title: 'Write 200 words', identityId: 'id-1', frequency: 'daily' }]);
+        return () => {};
+      }),
+      subscribeBadHabits: vi.fn((uid, callback) => {
+        callback([{ id: 'bad-habit-1', name: 'Eating candy', identityId: 'id-1', lapses: [] }]);
+        return () => {};
+      }),
+      subscribeCompletions: vi.fn((uid, callback) => {
+        callback([]);
+        return () => {};
+      }),
+      subscribeWeeklyReviews: vi.fn((uid, callback) => {
+        callback([]);
+        return () => {};
+      }),
+      toggleCompletion: vi.fn().mockResolvedValue(true),
+      saveIdentity: vi.fn().mockResolvedValue({ id: 'new-id' }),
+      updateIdentity: vi.fn().mockResolvedValue(),
+      deleteIdentityAtomic: vi.fn().mockResolvedValue(),
+      saveHabit: vi.fn().mockResolvedValue({ id: 'new-habit' }),
+      updateHabit: vi.fn().mockResolvedValue(),
+      deleteHabit: vi.fn().mockResolvedValue(),
+      saveBadHabit: vi.fn().mockResolvedValue({ id: 'new-bad-habit' }),
+      updateBadHabit: vi.fn().mockResolvedValue(),
+      deleteBadHabit: vi.fn().mockResolvedValue(),
+      logRelapse: vi.fn().mockResolvedValue(),
+      saveWeeklyReview: vi.fn().mockResolvedValue(),
+    }
+  };
+});
+
+// Mock react-hot-toast to prevent console errors or mounting issues
+vi.mock('react-hot-toast', () => ({
+  default: {
+    success: vi.fn(),
+    error: vi.fn(),
+    loading: vi.fn(),
+    dismiss: vi.fn(),
+  },
+  toast: Object.assign(
+    vi.fn(),
+    {
+      success: vi.fn(),
+      error: vi.fn(),
+      loading: vi.fn(),
+      dismiss: vi.fn(),
+    }
+  )
+}));

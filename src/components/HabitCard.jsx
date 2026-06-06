@@ -7,14 +7,13 @@ import toast from 'react-hot-toast';
 import { getLocalDateString } from '../utils/dateUtils';
 
 export default function HabitCard({ habit, onEdit, onDelete }) {
-  const { completions, selectedDate, toggleCompletion } = useHabits();
+  const { completionsIndex, selectedDate, toggleCompletion } = useHabits();
   const [hovered, setHovered] = useState(false);
   const [voting, setVoting] = useState(false);
 
   // Check completions for today
-  const completionToday = completions.find(
-    c => c.habitId === habit.id && c.dateNormalized === selectedDate
-  );
+  const habitCompletions = completionsIndex.get(habit.id);
+  const completionToday = habitCompletions?.get(selectedDate);
   const isCompletedToday = !!completionToday;
   const isTwoMinToday = completionToday?.isTwoMinVersion;
 
@@ -27,10 +26,8 @@ export default function HabitCard({ habit, onEdit, onDelete }) {
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayStr = getLocalDateString(yesterday);
 
-  const completedYesterday = completions.some(
-    c => c.habitId === habit.id && c.dateNormalized === yesterdayStr
-  );
-  const hasPastCompletions = completions.some(c => c.habitId === habit.id);
+  const completedYesterday = habitCompletions?.has(yesterdayStr) ?? false;
+  const hasPastCompletions = (habitCompletions?.size ?? 0) > 0;
   
   // Show warning if yesterday was missed, but we are looking at today, and the habit wasn't completed today yet, and it has some history
   const isYesterdayMissed = isSelectedDateToday && !completedYesterday && !isCompletedToday && hasPastCompletions;
