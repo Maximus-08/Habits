@@ -15,6 +15,27 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
+// Mock the AI service to avoid real network calls during testing
+vi.mock('../services/aiService', () => ({
+  fetchOnboardingSuggestions: vi.fn((identityName) => {
+    const name = identityName.toLowerCase();
+    if (name.includes('writer')) {
+      return {
+        stackedHabit: "Right after you shut your laptop screen to wrap up the workday",
+        twoMinRule: "Simply write down 10 words or doodle a sketch for 2 quick minutes.",
+        environmentPrep: "Leave your journal resting open on your favorite desk spot with a pilot pen ready to go.",
+        immediateReward: "Great job. Put on your headphones and chill out to your favorite ambient track."
+      };
+    }
+    return {
+      stackedHabit: "Hey, right after you pour your morning cup of coffee",
+      twoMinRule: "Pop open a book and read just 1 page or write 1 quick sentence. Easy win!",
+      environmentPrep: "Leave your notebook wide open on the desk with a pen right next to it before you head to sleep.",
+      immediateReward: "Boom! Check off your tracker and enjoy that warm cup of coffee."
+    };
+  })
+}));
+
 describe('Onboarding Wizard Flow', () => {
   beforeEach(() => {
     mockNavigate.mockClear();

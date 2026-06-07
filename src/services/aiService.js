@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 let genAI = null;
 
@@ -7,9 +7,9 @@ export function getGenAI() {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   if (apiKey && apiKey.trim() !== "" && apiKey !== "your_gemini_api_key_here") {
     try {
-      genAI = new GoogleGenerativeAI(apiKey);
+      genAI = new GoogleGenAI({ apiKey });
     } catch (err) {
-      console.error("Failed to initialize GoogleGenerativeAI:", err);
+      console.error("Failed to initialize GoogleGenAI:", err);
     }
   }
   return genAI;
@@ -108,11 +108,6 @@ export async function fetchOnboardingSuggestions(identityName, habitTitle) {
   }
 
   try {
-    const model = client.getGenerativeModel({
-      model: import.meta.env.VITE_GEMINI_MODEL || "gemma-4-26b-a4b-it",
-      generationConfig: { responseMimeType: "application/json" }
-    });
-
     const prompt = `You are an expert behavior change coach specializing in James Clear's "Atomic Habits" philosophy.
 The user is building a habit system for their identity: "${identityName}" and habit: "${habitTitle}".
 Based on this, generate tailored recommendations for their habit loop.
@@ -133,9 +128,18 @@ You MUST respond with a raw JSON object and nothing else. The JSON object must h
 
 Response JSON:`;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const response = await client.models.generateContent({
+      model: import.meta.env.VITE_GEMINI_MODEL || "gemma-4-26b-a4b-it",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        thinkingConfig: {
+          thinkingLevel: "high"
+        }
+      }
+    });
+
+    const text = response.text;
     return JSON.parse(text);
   } catch (error) {
     console.error("Gemini onboarding suggestion request failed, falling back to heuristics:", error);
@@ -153,13 +157,9 @@ export async function fetchEnvironmentSuggestions(type, habitName) {
   }
 
   try {
-    const model = client.getGenerativeModel({
-      model: import.meta.env.VITE_GEMINI_MODEL || "gemma-4-26b-a4b-it",
-      generationConfig: { responseMimeType: "application/json" }
-    });
-
+    let prompt;
     if (type === 'engine') {
-      const prompt = `You are an expert behavior change coach specializing in James Clear's "Atomic Habits" philosophy.
+      prompt = `You are an expert behavior change coach specializing in James Clear's "Atomic Habits" philosophy.
 The user wants to prepare their physical environment to make the following habit easy and obvious: "${habitName}".
 Suggest ONE highly specific, low-friction action to prep their environment (space preparation strategy) to trigger this habit.
 Keep the suggestion concise (under 20 words), direct, and written in a warm, informal, and personal tone (like a friendly, supportive companion talking directly to them).
@@ -167,13 +167,8 @@ You MUST respond with a raw JSON object and nothing else. The JSON object must h
 - "suggestion": string
 
 Response JSON:`;
-
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
-      return JSON.parse(text);
     } else {
-      const prompt = `You are an expert behavior change coach specializing in James Clear's "Atomic Habits" philosophy.
+      prompt = `You are an expert behavior change coach specializing in James Clear's "Atomic Habits" philosophy.
 The user wants to establish environment adjustments/brakes to stop a bad habit: "${habitName}".
 Provide two specific recommendations:
 1. Make it Invisible: How to hide the trigger cue or put it out of sight.
@@ -184,12 +179,21 @@ You MUST respond with a raw JSON object and nothing else. The JSON object must h
 - "difficultStrategy": string
 
 Response JSON:`;
-
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
-      return JSON.parse(text);
     }
+
+    const response = await client.models.generateContent({
+      model: import.meta.env.VITE_GEMINI_MODEL || "gemma-4-26b-a4b-it",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        thinkingConfig: {
+          thinkingLevel: "high"
+        }
+      }
+    });
+
+    const text = response.text;
+    return JSON.parse(text);
   } catch (error) {
     console.error("Gemini environment suggestion request failed, falling back to heuristics:", error);
     return getLocalEnvironmentSuggestions(type, habitName);

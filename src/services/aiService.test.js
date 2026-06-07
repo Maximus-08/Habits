@@ -7,19 +7,18 @@ import {
 
 // Mock the Gemini SDK
 const mockGenerateContent = vi.fn();
-const mockGetGenerativeModel = vi.fn(() => ({
-  generateContent: mockGenerateContent
-}));
 const mockConstructor = vi.fn();
 
-vi.mock('@google/generative-ai', () => {
-  class GoogleGenerativeAI {
-    constructor(apiKey) {
-      mockConstructor(apiKey);
+vi.mock('@google/genai', () => {
+  class GoogleGenAI {
+    constructor(config) {
+      mockConstructor(config);
     }
-    getGenerativeModel = mockGetGenerativeModel;
+    models = {
+      generateContent: mockGenerateContent
+    };
   }
-  return { GoogleGenerativeAI };
+  return { GoogleGenAI };
 });
 
 describe('aiService - Gemini Coach Suggestion Engine', () => {
@@ -50,22 +49,26 @@ describe('aiService - Gemini Coach Suggestion Engine', () => {
     import.meta.env.VITE_GEMINI_API_KEY = 'mock-api-key-xyz';
 
     mockGenerateContent.mockResolvedValue({
-      response: {
-        text: () => JSON.stringify({
-          stackedHabit: "After I put my shoes on",
-          environmentPrep: "Lay shoes next to bed",
-          twoMinRule: "Do 2 squats",
-          immediateReward: "Drink water"
-        })
-      }
+      text: JSON.stringify({
+        stackedHabit: "After I put my shoes on",
+        environmentPrep: "Lay shoes next to bed",
+        twoMinRule: "Do 2 squats",
+        immediateReward: "Drink water"
+      })
     });
 
     const res = await fetchOnboardingSuggestions('Athlete', 'Morning Routine');
     
-    expect(mockConstructor).toHaveBeenCalledWith('mock-api-key-xyz');
-    expect(mockGetGenerativeModel).toHaveBeenCalledWith({
+    expect(mockConstructor).toHaveBeenCalledWith({ apiKey: 'mock-api-key-xyz' });
+    expect(mockGenerateContent).toHaveBeenCalledWith({
       model: 'gemma-4-26b-a4b-it',
-      generationConfig: { responseMimeType: 'application/json' }
+      contents: expect.any(String),
+      config: {
+        responseMimeType: 'application/json',
+        thinkingConfig: {
+          thinkingLevel: 'high'
+        }
+      }
     });
     expect(res.stackedHabit).toBe('After I put my shoes on');
     expect(res.environmentPrep).toBe('Lay shoes next to bed');
@@ -77,32 +80,48 @@ describe('aiService - Gemini Coach Suggestion Engine', () => {
     import.meta.env.VITE_GEMINI_API_KEY = 'mock-api-key-xyz';
 
     mockGenerateContent.mockResolvedValue({
-      response: {
-        text: () => JSON.stringify({
-          suggestion: "Set up piano keyboard on desk"
-        })
-      }
+      text: JSON.stringify({
+        suggestion: "Set up piano keyboard on desk"
+      })
     });
 
     const res = await fetchEnvironmentSuggestions('engine', 'Play piano');
     expect(res.suggestion).toBe('Set up piano keyboard on desk');
+    expect(mockGenerateContent).toHaveBeenCalledWith({
+      model: 'gemma-4-26b-a4b-it',
+      contents: expect.any(String),
+      config: {
+        responseMimeType: 'application/json',
+        thinkingConfig: {
+          thinkingLevel: 'high'
+        }
+      }
+    });
   });
 
   test('should return environment suggestions for brake type when API key is present', async () => {
     import.meta.env.VITE_GEMINI_API_KEY = 'mock-api-key-xyz';
 
     mockGenerateContent.mockResolvedValue({
-      response: {
-        text: () => JSON.stringify({
-          invisibleStrategy: "Hide keyboard in closet",
-          difficultStrategy: "Unplug keyboard power cord"
-        })
-      }
+      text: JSON.stringify({
+        invisibleStrategy: "Hide keyboard in closet",
+        difficultStrategy: "Unplug keyboard power cord"
+      })
     });
 
     const res = await fetchEnvironmentSuggestions('brake', 'Play piano');
     expect(res.invisibleStrategy).toBe('Hide keyboard in closet');
     expect(res.difficultStrategy).toBe('Unplug keyboard power cord');
+    expect(mockGenerateContent).toHaveBeenCalledWith({
+      model: 'gemma-4-26b-a4b-it',
+      contents: expect.any(String),
+      config: {
+        responseMimeType: 'application/json',
+        thinkingConfig: {
+          thinkingLevel: 'high'
+        }
+      }
+    });
   });
 
   test('should fallback to local suggestions if Gemini request fails/rejects', async () => {
