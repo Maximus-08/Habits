@@ -59,15 +59,12 @@ describe('aiService - Gemini Coach Suggestion Engine', () => {
 
     const res = await fetchOnboardingSuggestions('Athlete', 'Morning Routine');
     
-    expect(mockConstructor).toHaveBeenCalledWith({ apiKey: 'mock-api-key-xyz' });
+    expect(mockConstructor).toHaveBeenCalledWith({ apiKey: 'mock-api-key-xyz', apiVersion: 'v1beta' });
     expect(mockGenerateContent).toHaveBeenCalledWith({
       model: 'gemma-4-26b-a4b-it',
       contents: expect.any(String),
       config: {
-        responseMimeType: 'application/json',
-        thinkingConfig: {
-          thinkingLevel: 'high'
-        }
+        responseMimeType: 'application/json'
       }
     });
     expect(res.stackedHabit).toBe('After I put my shoes on');
@@ -91,10 +88,7 @@ describe('aiService - Gemini Coach Suggestion Engine', () => {
       model: 'gemma-4-26b-a4b-it',
       contents: expect.any(String),
       config: {
-        responseMimeType: 'application/json',
-        thinkingConfig: {
-          thinkingLevel: 'high'
-        }
+        responseMimeType: 'application/json'
       }
     });
   });
@@ -116,10 +110,7 @@ describe('aiService - Gemini Coach Suggestion Engine', () => {
       model: 'gemma-4-26b-a4b-it',
       contents: expect.any(String),
       config: {
-        responseMimeType: 'application/json',
-        thinkingConfig: {
-          thinkingLevel: 'high'
-        }
+        responseMimeType: 'application/json'
       }
     });
   });

@@ -7,7 +7,7 @@ export function getGenAI() {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   if (apiKey && apiKey.trim() !== "" && apiKey !== "your_gemini_api_key_here") {
     try {
-      genAI = new GoogleGenAI({ apiKey });
+      genAI = new GoogleGenAI({ apiKey, apiVersion: "v1beta" });
     } catch (err) {
       console.error("Failed to initialize GoogleGenAI:", err);
     }
@@ -132,10 +132,7 @@ Response JSON:`;
       model: import.meta.env.VITE_GEMINI_MODEL || "gemma-4-26b-a4b-it",
       contents: prompt,
       config: {
-        responseMimeType: "application/json",
-        thinkingConfig: {
-          thinkingLevel: "high"
-        }
+        responseMimeType: "application/json"
       }
     });
 
@@ -185,10 +182,7 @@ Response JSON:`;
       model: import.meta.env.VITE_GEMINI_MODEL || "gemma-4-26b-a4b-it",
       contents: prompt,
       config: {
-        responseMimeType: "application/json",
-        thinkingConfig: {
-          thinkingLevel: "high"
-        }
+        responseMimeType: "application/json"
       }
     });
 
