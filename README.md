@@ -21,7 +21,7 @@ The interface features a warm, high-contrast, premium color scheme (terracotta, 
 ### 3. Environment Architect Tab
 - **Engines (Good Habits Cues)**: Design space preparation strategies to make cues obvious (e.g., unrolling your exercise mat next to the bed).
 - **Brakes (Anti-Habits Friction)**: Establish commitment devices to make bad habits difficult or invisible (e.g., storing chargers outside the bedroom).
-- **AI Coach Suggestions**: Heuristic-based recommendations to optimize environment cues.
+- **AI Coach Suggestions**: Opt-in Gemini API integration using Gemma 4 to suggest custom routines and environment prep cues, with robust client-side offline heuristic fallbacks.
 
 ### 4. Performance Analytics Page
 - **14-Day Completion curves**: Area charts showing daily good habit compliance percentage.
@@ -46,6 +46,15 @@ The interface features a warm, high-contrast, premium color scheme (terracotta, 
 - **Client-Side Selector (`useMemo`)**: Intercepts loaded context states to filter and deduplicate records before they are rendered, resolving UI bloat instantly.
 - **Background Database Cleanup**: Optimizes and purges duplicate Firestore documents concurrently using `Promise.all` deletions and updates, keeping database sizes small.
 
+### 3. Gemini AI Coach Client-Side Integration
+- **SDK & Endpoint Routing**: Built using `@google/genai`. Gemma models (specifically `gemma-4-26b-a4b-it`) require initializing the client with `apiVersion: "v1beta"` to route calls correctly.
+- **Model Constraints**: Removes `thinkingConfig` parameters from content generation calls as Gemma does not support them and returns HTTP 400.
+- **Production CORS Restriction**: Direct browser-to-API calls are blocked by the Gemini API in production (on origins like `*.vercel.app`) to prevent key exposure. The application gracefully falls back to local offline heuristics, and production deployments should route API calls through a secure backend proxy serverless function.
+
+### 4. Testing & CI Infrastructure
+- **Vitest Test Suite**: Includes 45 unit and integration tests covering context providers, state sync loops, routing guards, and UI wizard flows.
+- **GitHub Actions CI**: Automated workflow runs linting, unit tests, and production build checks on every push and pull request to `main`.
+
 ---
 
 ## Getting Started
@@ -63,6 +72,10 @@ VITE_FIREBASE_PROJECT_ID=your_project_id_here
 VITE_FIREBASE_STORAGE_BUCKET=your_storage_bucket_here
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id_here
 VITE_FIREBASE_APP_ID=your_app_id_here
+
+# AI Coach Configuration
+VITE_GEMINI_API_KEY=your_gemini_api_key_here
+VITE_GEMINI_MODEL=gemma-4-26b-a4b-it
 ```
 
 ### 2. Install Dependencies
