@@ -44,7 +44,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // App opening redirect helper
 openAppBtn.addEventListener("click", () => {
-  chrome.tabs.create({ url: "http://localhost:5173/" });
+  const isDev = !chrome.runtime.getManifest().update_url;
+  const url = isDev ? "http://localhost:5173/" : "https://habits-eight-beta.vercel.app/";
+  chrome.tabs.create({ url });
 });
 
 // Load state from chrome local storage
@@ -350,7 +352,7 @@ function queueActionLocally(type, payload) {
 // Query tab helper
 async function getActiveHabitsTab() {
   return new Promise((resolve) => {
-    chrome.tabs.query({ url: ["http://localhost/*", "https://*.vercel.app/*"] }, (tabs) => {
+    chrome.tabs.query({ url: ["http://localhost/*", "https://habits-eight-beta.vercel.app/*", "https://*.vercel.app/*"] }, (tabs) => {
       if (tabs && tabs.length > 0) {
         resolve(tabs[0]);
       } else {

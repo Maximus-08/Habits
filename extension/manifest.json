@@ -9,6 +9,7 @@
   ],
   "host_permissions": [
     "http://localhost/*",
+    "https://habits-eight-beta.vercel.app/*",
     "https://*.vercel.app/*"
   ],
   "action": {
@@ -21,6 +22,7 @@
     {
       "matches": [
         "http://localhost/*",
+        "https://habits-eight-beta.vercel.app/*",
         "https://*.vercel.app/*"
       ],
       "js": ["content.js"],
