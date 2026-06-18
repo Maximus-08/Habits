@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Undo2, Zap, Trash2, Edit } from 'lucide-react';
 import { useHabits } from '../context/HabitsContext';
-import { Card } from './ui/Primitives';
+import { Card, Tooltip } from './ui/Primitives';
 import toast from 'react-hot-toast';
 import { getLocalDateString } from '../utils/dateUtils';
 
@@ -28,7 +28,7 @@ export default function HabitCard({ habit, onEdit, onDelete }) {
 
   const completedYesterday = habitCompletions?.has(yesterdayStr) ?? false;
   const hasPastCompletions = (habitCompletions?.size ?? 0) > 0;
-  
+
   // Show warning if yesterday was missed, but we are looking at today, and the habit wasn't completed today yet, and it has some history
   const isYesterdayMissed = isSelectedDateToday && !completedYesterday && !isCompletedToday && hasPastCompletions;
 
@@ -99,29 +99,30 @@ export default function HabitCard({ habit, onEdit, onDelete }) {
     >
       <Card
         hoverLift={!isCompletedToday}
-        className={`transition-all duration-300 border ${
-          isCompletedToday
+        className={`overflow-visible transition-all duration-300 border ${isCompletedToday
             ? 'bg-successTint/30 border-success/40'
             : isYesterdayMissed
-            ? 'border-forgive ring-2 ring-forgive/20 animate-pulse'
-            : 'border-border/60'
-        }`}
+              ? 'border-forgive ring-2 ring-forgive/20'
+              : 'border-border/60'
+          }`}
       >
-        {/* Never Miss Twice Badge */}
-        {isYesterdayMissed && (
-          <div className="bg-forgive/15 border-b border-forgive text-text p-2.5 text-xs font-semibold flex items-center gap-2">
-            <span className="flex h-2 w-2 rounded-full bg-forgive" />
-            <span>Yesterday was a slip. Cast a vote today - even the 2-min version counts!</span>
-          </div>
-        )}
-
         <div className="p-5">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
-              <span className="text-[10px] uppercase font-mono tracking-widest text-muted bg-hoverBg px-2 py-0.5 rounded border border-border/50">
-                {habit.category}
-              </span>
-              
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] uppercase font-mono tracking-widest text-muted bg-hoverBg px-2 py-0.5 rounded border border-border/50">
+                  {habit.category}
+                </span>
+                {isYesterdayMissed && (
+                  <Tooltip content="Yesterday was a slip. Cast a vote today - even the 2-min version counts!">
+                    <span className="text-[10px] uppercase font-mono tracking-widest text-forgive-dark bg-forgive-dark/10 border border-forgive-dark/30 px-2 py-0.5 rounded flex items-center gap-1 cursor-help font-bold">
+                      <span className="h-1.5 w-1.5 rounded-full bg-forgive-dark animate-ping duration-1000" />
+                      Slip Yesterday
+                    </span>
+                  </Tooltip>
+                )}
+              </div>
+
               <div className="mt-2">
                 {intentionSentence}
               </div>
@@ -215,28 +216,27 @@ export default function HabitCard({ habit, onEdit, onDelete }) {
 
               {/* Completed Type Indicator */}
               {isCompletedToday && (
-                <span className={`text-[10px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                  isTwoMinToday 
-                    ? 'text-forgive bg-forgive/10 border border-forgive/20' 
+                <span className={`text-[10px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${isTwoMinToday
+                    ? 'text-forgive bg-forgive/10 border border-forgive/20'
                     : 'text-success bg-success/10 border border-success/20'
-                }`}>
+                  }`}>
                   {isTwoMinToday ? "⚡ 2-Min" : "✨ Full"}
                 </span>
               )}
             </div>
           </div>
-          
+
           {/* Card footer controls (Edit/Delete) */}
           <div className="flex items-center justify-end border-t border-border/20 mt-4 pt-3 gap-2 opacity-60 hover:opacity-100 focus-within:opacity-100 transition-opacity">
-            <button 
-              onClick={() => onEdit(habit)} 
+            <button
+              onClick={() => onEdit(habit)}
               className="p-1.5 text-muted hover:text-text hover:bg-hoverBg rounded transition-colors cursor-pointer"
               title="Edit Habit System"
             >
               <Edit className="w-3.5 h-3.5" />
             </button>
-            <button 
-              onClick={() => onDelete(habit.id)} 
+            <button
+              onClick={() => onDelete(habit.id)}
               className="p-1.5 text-muted hover:text-primary hover:bg-hoverBg rounded transition-colors cursor-pointer"
               title="Delete Habit"
             >

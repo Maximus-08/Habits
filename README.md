@@ -150,3 +150,10 @@ Runs the unit test suite using Vitest.
 - `satisfaction` (Number)
 - `reflection` (Map: `wins`, `challenges`, `learning`, `nextWeek`)
 - `status` (String: `'draft'` | `'completed'`)
+
+### Tasks (`users/{userId}/tasks/{taskId}`)
+- `title` (String)
+- `dateNormalized` (String, `YYYY-MM-DD`)
+- `completed` (Boolean)
+- `createdAt` (ISO String)
+- `completedAt` (ISO String or `null`)

@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, Sparkles, Calendar, ArrowRight,
   TrendingUp, Activity, Award, ShieldAlert, FileText, UserPlus,
-  Edit2, Trash2
+  Edit2, Trash2, ListTodo
 } from 'lucide-react';
 import { RadialBarChart, RadialBar, ResponsiveContainer } from 'recharts';
 import { useHabits } from '../context/HabitsContext';
@@ -27,6 +27,7 @@ export default function Dashboard() {
     habits,
     badHabits,
     weeklyReviews,
+    tasks,
     selectedDate,
     setSelectedDate,
     addIdentity,
@@ -37,6 +38,9 @@ export default function Dashboard() {
     deleteHabit,
     addBadHabit,
     deleteBadHabit,
+    addTask,
+    deleteTask,
+    toggleTask,
     getIdentityStrength,
     getDaysFree,
     getLevelProgress,
@@ -93,6 +97,110 @@ export default function Dashboard() {
 
   // Active identity filtering (default: All)
   const [filterIdentityId, setFilterIdentityId] = useState('all');
+
+  const [showTasks, setShowTasks] = useState(() => {
+    const saved = localStorage.getItem('atomic_show_tasks');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+
+  useEffect(() => {
+    localStorage.setItem('atomic_show_tasks', showTasks.toString());
+  }, [showTasks]);
+
+  const filteredTasks = tasks.filter(t => t.dateNormalized === selectedDate);
+
+  // Store timers for task vanishing so they can be cleared if unchecked
+  const timersRef = useRef({});
+  const [hiddenTaskIds, setHiddenTaskIds] = useState(new Set());
+
+  // Clear timers and hidden tasks when selectedDate changes
+  useEffect(() => {
+    Object.values(timersRef.current).forEach(clearTimeout);
+    timersRef.current = {};
+    setHiddenTaskIds(new Set());
+  }, [selectedDate]);
+
+  // Clean up timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(timersRef.current).forEach(clearTimeout);
+    };
+  }, []);
+
+  const handleToggleTask = async (taskId, currentCompleted) => {
+    const nextCompleted = !currentCompleted;
+    
+    // Clear any existing timer for this task
+    if (timersRef.current[taskId]) {
+      clearTimeout(timersRef.current[taskId]);
+      delete timersRef.current[taskId];
+    }
+
+    if (nextCompleted) {
+      try {
+        await toggleTask(taskId, true);
+        
+        // Start a timer to hide and delete the task after 3 seconds
+        const timer = setTimeout(async () => {
+          setHiddenTaskIds(prev => {
+            const next = new Set(prev);
+            next.add(taskId);
+            return next;
+          });
+          delete timersRef.current[taskId];
+
+          try {
+            await deleteTask(taskId);
+          } catch (err) {
+            console.error("Failed to auto-delete task:", err);
+          }
+        }, 3000);
+
+        timersRef.current[taskId] = timer;
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to update task");
+      }
+    } else {
+      setHiddenTaskIds(prev => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+      try {
+        await toggleTask(taskId, false);
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to update task");
+      }
+    }
+  };
+
+  const handleAddTask = async (e) => {
+    e.preventDefault();
+    if (!newTaskTitle.trim()) return;
+    try {
+      await addTask(newTaskTitle.trim(), selectedDate);
+      setNewTaskTitle('');
+      toast.success("Task added successfully");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to add task");
+    }
+  };
+
+  const handleDeleteTask = async (id) => {
+    if (confirm("Are you sure you want to delete this task?")) {
+      try {
+        await deleteTask(id);
+        toast.success("Task deleted");
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to delete task");
+      }
+    }
+  };
 
   // Reset filter if active identity is deleted
   useEffect(() => {
@@ -419,6 +527,16 @@ export default function Dashboard() {
 
         <div className="flex flex-wrap gap-2">
           <Button
+            variant={showTasks ? "success" : "outline"}
+            size="sm"
+            onClick={() => setShowTasks(!showTasks)}
+            className="text-xs"
+          >
+            <ListTodo className="w-3.5 h-3.5 mr-1.5" />
+            {showTasks ? "Hide Tasks" : "Show Tasks"}
+          </Button>
+
+          <Button
             variant="outline"
             size="sm"
             onClick={() => setIdentityModalOpen(true)}
@@ -471,7 +589,115 @@ export default function Dashboard() {
         
         {/* LEFT COLUMN: Habit lists (65%) */}
         <div className="lg:col-span-2 space-y-8" id="walkthrough-identities">
-          
+
+          {/* Daily Tasks Card */}
+          <AnimatePresence initial={false}>
+            {showTasks && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <Card className="border border-border/60">
+                  <CardHeader className="py-4 border-b border-border/40 flex justify-between items-center flex-row">
+                    <CardTitle className="text-base font-bold flex items-center gap-2">
+                      <ListTodo className="w-5 h-5 text-primary" />
+                      Daily Tasks
+                    </CardTitle>
+                    <span className="text-xs font-mono text-muted">
+                      {filteredTasks.filter(t => !t.completed).length} Remaining
+                    </span>
+                  </CardHeader>
+                  <CardContent className="p-5 space-y-4">
+                    {/* Add Task Form */}
+                    <form onSubmit={handleAddTask} className="flex gap-2">
+                      <Input
+                        type="text"
+                        placeholder="Add a new daily task..."
+                        value={newTaskTitle}
+                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                        className="flex-grow h-9 text-xs"
+                      />
+                      <Button type="submit" size="sm" className="h-9">
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add Task
+                      </Button>
+                    </form>
+
+                    {/* Task List */}
+                    {filteredTasks.length === 0 ? (
+                      <div className="text-center py-6 text-xs text-muted italic">
+                        No tasks for this day. Add a task to structure your day!
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <AnimatePresence initial={false}>
+                          {filteredTasks
+                            .filter(task => !hiddenTaskIds.has(task.id))
+                            .map(task => (
+                              <motion.div
+                                key={task.id}
+                                layout
+                                initial={{ opacity: 0, height: 0, y: 10 }}
+                                animate={{ opacity: 1, height: 'auto', y: 0 }}
+                                exit={{ opacity: 0, height: 0, y: -10 }}
+                                transition={{ duration: 0.25 }}
+                                className="flex items-center justify-between p-3 rounded-lg border border-border/40 hover:bg-hoverBg/20 group transition-colors overflow-hidden"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    aria-label={`Toggle task: ${task.title}`}
+                                    type="button"
+                                    onClick={() => handleToggleTask(task.id, task.completed)}
+                                    className={`w-5 h-5 rounded border flex items-center justify-center cursor-pointer transition-all ${
+                                      task.completed
+                                        ? 'bg-success border-success text-white'
+                                        : 'border-border hover:border-primary/50'
+                                    }`}
+                                  >
+                                    {task.completed && (
+                                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                        <polyline points="20 6 9 17 4 12" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                  <span className="relative text-sm inline-block">
+                                    <span className={`transition-all duration-300 ${
+                                      task.completed ? 'text-muted italic' : 'text-text'
+                                    }`}>
+                                      {task.title}
+                                    </span>
+                                    <motion.div
+                                      initial={{ width: "0%" }}
+                                      animate={{ width: task.completed ? "100%" : "0%" }}
+                                      transition={{ duration: 0.4, ease: "easeInOut" }}
+                                      className="absolute left-0 top-[55%] h-[1.5px] bg-muted/60"
+                                    />
+                                  </span>
+                                </div>
+
+                                <button
+                                  aria-label={`Delete task: ${task.title}`}
+                                  type="button"
+                                  onClick={() => handleDeleteTask(task.id)}
+                                  className="opacity-0 group-hover:opacity-100 p-1 text-muted hover:text-primary cursor-pointer transition-all"
+                                  title="Delete Task"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </motion.div>
+                            ))}
+                        </AnimatePresence>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {filteredIdentities.length === 0 ? (
             <Card className="text-center p-12 border border-dashed border-border">
               <CardContent className="space-y-4">
@@ -503,7 +729,7 @@ export default function Dashboard() {
                 <div key={identity.id} className="space-y-4">
                   {/* Identity Header */}
                   <div className="flex flex-col sm:flex-row justify-between sm:items-end border-b border-border/30 pb-3 gap-2">
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="text-xl font-bold font-serif text-text">{identity.name}</h2>
                         
@@ -530,13 +756,13 @@ export default function Dashboard() {
                         </div>
                       </div>
                       
-                      <p className="text-xs text-muted font-serif italic mt-0.5">
+                      <p className="text-xs text-muted font-serif italic mt-0.5 break-words">
                         "{identity.beliefStatement || `I am the type of person who is a committed ${identity.name}.`}"
                       </p>
                     </div>
  
                     {/* Identity Strength Badge */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                       <span className="text-[11px] font-mono text-muted uppercase tracking-wider">Identity Strength:</span>
                       <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${
                         strength >= 80 
@@ -651,9 +877,9 @@ export default function Dashboard() {
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <h4 className="text-xs font-bold text-text truncate">{identity.name}</h4>
-                          <span className="text-[9px] font-mono font-bold text-primary bg-primary/10 px-1 py-0.2 rounded">Lvl {getIdentityLevelProgress(identity.id).currentLevel}</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <h4 className="text-xs font-bold text-text truncate flex-1 min-w-0">{identity.name}</h4>
+                          <span className="text-[9px] font-mono font-bold text-primary bg-primary/10 px-1 py-0.2 rounded shrink-0 whitespace-nowrap">Lvl {getIdentityLevelProgress(identity.id).currentLevel}</span>
                         </div>
                         <p className="text-[10px] text-muted italic truncate">"{identity.beliefStatement}"</p>
                       </div>

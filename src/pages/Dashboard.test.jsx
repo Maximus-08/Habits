@@ -184,4 +184,91 @@ describe('Dashboard Page Integration', () => {
     );
     console.log("[DEBUG Dashboard] Test 4 complete");
   });
+
+  test('should render daily tasks, support adding, toggling, and deleting tasks', async () => {
+    console.log("[DEBUG Dashboard] Starting test 5");
+    const user = userEvent.setup();
+
+    // Mock subscribeTasks to return an initial task
+    const mockTask = {
+      id: 'task-test-999',
+      title: 'Buy groceries',
+      completed: false,
+      dateNormalized: '2026-06-18' // matching default test selectedDate context
+    };
+
+    firestoreService.subscribeTasks.mockImplementationOnce((uid, callback) => {
+      callback([mockTask]);
+      return () => {};
+    });
+
+    render(<Dashboard />);
+
+    // Verify tasks header renders
+    expect(await screen.findByText('Daily Tasks')).toBeInTheDocument();
+
+    // Verify initial task is listed
+    expect(screen.getByText('Buy groceries')).toBeInTheDocument();
+
+    // Toggle Task completion
+    const toggleBtn = screen.getByLabelText('Toggle task: Buy groceries');
+    await user.click(toggleBtn);
+
+    expect(firestoreService.updateTask).toHaveBeenCalledWith(
+      'mock-user-123',
+      'task-test-999',
+      expect.objectContaining({
+        completed: true
+      })
+    );
+
+    // Delete Task
+    const deleteBtn = screen.getByLabelText('Delete task: Buy groceries');
+    // Mock window.confirm
+    const confirmSpy = vi.spyOn(window, 'confirm').mockImplementation(() => true);
+    await user.click(deleteBtn);
+
+    expect(firestoreService.deleteTask).toHaveBeenCalledWith(
+      'mock-user-123',
+      'task-test-999'
+    );
+    confirmSpy.mockRestore();
+
+    // Verify Add Task
+    const taskInput = screen.getByPlaceholderText(/Add a new daily task.../i);
+    const addTaskBtn = screen.getByRole('button', { name: /Add Task/i });
+
+    fireEvent.change(taskInput, { target: { value: 'Read a book' } });
+    await user.click(addTaskBtn);
+
+    expect(firestoreService.saveTask).toHaveBeenCalledWith(
+      'mock-user-123',
+      expect.objectContaining({
+        title: 'Read a book'
+      })
+    );
+    console.log("[DEBUG Dashboard] Test 5 complete");
+  });
+
+  test('should toggle daily tasks show/hide state on toolbar click', async () => {
+    console.log("[DEBUG Dashboard] Starting test 6");
+    const user = userEvent.setup();
+    render(<Dashboard />);
+
+    // Click "Hide Tasks" to toggle off
+    const toggleBtn = await screen.findByRole('button', { name: /Hide Tasks/i });
+    await user.click(toggleBtn);
+
+    // Card should be hidden
+    expect(screen.queryByText('Daily Tasks')).not.toBeInTheDocument();
+    expect(localStorage.getItem('atomic_show_tasks')).toBe('false');
+
+    // Click again to show
+    const showBtn = screen.getByRole('button', { name: /Show Tasks/i });
+    await user.click(showBtn);
+
+    expect(screen.getByText('Daily Tasks')).toBeInTheDocument();
+    expect(localStorage.getItem('atomic_show_tasks')).toBe('true');
+    console.log("[DEBUG Dashboard] Test 6 complete");
+  });
 });

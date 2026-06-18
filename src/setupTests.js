@@ -72,7 +72,11 @@ vi.mock('./config/firebase', () => ({
   auth: {
     onAuthStateChanged: vi.fn((cb) => {
       // Simulate user is logged in
-      cb({ uid: 'mock-user-123', email: 'test@example.com' });
+      cb({ 
+        uid: 'mock-user-123', 
+        email: 'test@example.com',
+        getIdToken: vi.fn().mockResolvedValue('mock-auth-token-xyz')
+      });
       return () => {};
     })
   },
@@ -109,6 +113,10 @@ vi.mock('./services/firestoreService', () => {
         callback([]);
         return () => {};
       }),
+      subscribeTasks: vi.fn((uid, callback) => {
+        callback([]);
+        return () => {};
+      }),
       toggleCompletion: vi.fn().mockResolvedValue(true),
       saveIdentity: vi.fn().mockResolvedValue({ id: 'new-id' }),
       updateIdentity: vi.fn().mockResolvedValue(),
@@ -121,6 +129,9 @@ vi.mock('./services/firestoreService', () => {
       deleteBadHabit: vi.fn().mockResolvedValue(),
       logRelapse: vi.fn().mockResolvedValue(),
       saveWeeklyReview: vi.fn().mockResolvedValue(),
+      saveTask: vi.fn().mockResolvedValue({ id: 'new-task' }),
+      updateTask: vi.fn().mockResolvedValue(),
+      deleteTask: vi.fn().mockResolvedValue(),
     }
   };
 });

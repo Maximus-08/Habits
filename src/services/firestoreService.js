@@ -97,6 +97,15 @@ export const firestoreService = {
     }, onError);
   },
 
+  subscribeTasks: (userId, callback, onError) => {
+    const tasksRef = collection(db, 'users', userId, 'tasks');
+    return onSnapshot(tasksRef, (snapshot) => {
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      callback(items);
+    }, onError);
+  },
+
   // --- IDENTITY CRUD ---
 
   saveIdentity: async (userId, identity) => {
@@ -397,5 +406,31 @@ export const firestoreService = {
     const completionsRef = collection(db, 'users', userId, 'completions');
     const docRef = doc(completionsRef, completion.id);
     await setDoc(docRef, completion);
+  },
+
+  // --- DAILY TASKS CRUD ---
+
+  saveTask: async (userId, task) => {
+    const tasksRef = collection(db, 'users', userId, 'tasks');
+    const newDocRef = task.id ? doc(tasksRef, task.id) : doc(tasksRef);
+    const data = {
+      title: task.title,
+      dateNormalized: task.dateNormalized,
+      completed: task.completed || false,
+      createdAt: task.createdAt || new Date().toISOString(),
+      completedAt: task.completed ? (task.completedAt || new Date().toISOString()) : null
+    };
+    await setDoc(newDocRef, data);
+    return { id: newDocRef.id, ...data };
+  },
+
+  updateTask: async (userId, id, fields) => {
+    const docRef = doc(db, 'users', userId, 'tasks', id);
+    await updateDoc(docRef, fields);
+  },
+
+  deleteTask: async (userId, id) => {
+    const docRef = doc(db, 'users', userId, 'tasks', id);
+    await deleteDoc(docRef);
   }
 };

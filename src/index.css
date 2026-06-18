@@ -11,6 +11,7 @@
   --color-secondary-hover: #1d4ed8;
   --color-success: #83B28A; /* Sage Green (Darker) */
   --color-forgive: #F6C879;
+  --color-forgive-dark: #B97C1B;
   --color-text: #4A4036;
   --color-muted: #8C7C6B;
   --color-border: #EAE4DD;
@@ -30,12 +31,15 @@
 @utility bg-secondary-hover { background-color: var(--color-secondary-hover); }
 @utility bg-success { background-color: var(--color-success); }
 @utility bg-forgive { background-color: var(--color-forgive); }
+@utility bg-forgive-dark { background-color: var(--color-forgive-dark); }
 @utility text-text { color: var(--color-text); }
 @utility text-text-main { color: var(--color-text); }
 @utility text-text-muted { color: var(--color-muted); }
 @utility text-muted { color: var(--color-muted); }
+@utility text-forgive-dark { color: var(--color-forgive-dark); }
 @utility border-border { border-color: var(--color-border); }
 @utility border-forgive { border-color: var(--color-forgive); }
+@utility border-forgive-dark { border-color: var(--color-forgive-dark); }
 
 @utility glass-panel {
   background: rgba(255, 255, 255, 0.45);

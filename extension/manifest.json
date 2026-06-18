@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Habits - Daily rundown",
+  "version": "1.0.0",
+  "description": "Track your atomic habits and daily tasks directly from your browser toolbar, synced with the Habits web app.",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://localhost/*",
+    "https://*.vercel.app/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost/*",
+        "https://*.vercel.app/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ]
+}

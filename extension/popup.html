@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Habits Rundown</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="popup-header">
+      <div class="brand">
+        <span class="brand-logo">🌱</span>
+        <h1 class="brand-name">Habits</h1>
+      </div>
+      <div class="sync-status" id="sync-status">
+        <span class="status-dot offline"></span>
+        <span class="status-text">Disconnected</span>
+      </div>
+    </header>
+
+    <!-- User Profile Bar -->
+    <div class="profile-bar" id="profile-bar" style="display: none;">
+      <div class="profile-level">
+        <span class="level-badge">Lvl <span id="user-level">1</span></span>
+        <span class="level-name" id="user-level-name">Seedling</span>
+      </div>
+      <div class="profile-votes">
+        <span id="user-votes">0</span> <span class="votes-label">Votes</span>
+      </div>
+    </div>
+
+    <!-- Login Prompt (Fallback) -->
+    <div class="auth-fallback" id="auth-fallback">
+      <p class="fallback-message">Please open and sign in to the Habits Web App to sync your data.</p>
+      <button class="btn btn-primary" id="open-app-btn">Open Habits App</button>
+    </div>
+
+    <!-- Main Content (Visible when authenticated) -->
+    <div class="main-content" id="main-content" style="display: none;">
+      <!-- Tab Controls -->
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="habits">Habits</button>
+        <button class="tab-btn" data-tab="tasks">Daily Tasks</button>
+      </div>
+
+      <!-- Tab Panels -->
+      <div class="tab-panels">
+        <!-- Habits Panel -->
+        <div class="tab-panel active" id="panel-habits">
+          <ul class="item-list" id="habits-list">
+            <!-- Dynamic habits will go here -->
+          </ul>
+        </div>
+
+        <!-- Tasks Panel -->
+        <div class="tab-panel" id="panel-tasks">
+          <!-- Add Task Form -->
+          <form class="add-task-form" id="add-task-form">
+            <input type="text" id="new-task-input" class="form-input" placeholder="Add a daily task..." required>
+            <button type="submit" class="btn-icon">＋</button>
+          </form>
+          <ul class="item-list" id="tasks-list">
+            <!-- Dynamic tasks will go here -->
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

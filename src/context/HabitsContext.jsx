@@ -38,6 +38,7 @@ export const HabitsProvider = ({ children }) => {
   const [badHabits, setBadHabits] = useState([]);
   const [completions, setCompletions] = useState([]);
   const [weeklyReviews, setWeeklyReviews] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [selectedDate, setSelectedDate] = useState(getLocalDateString());
   
   // Ref to prevent unsubscribing & resubscribing on token refreshes or wake-ups
@@ -109,6 +110,18 @@ export const HabitsProvider = ({ children }) => {
     return unique;
   }, [completions]);
 
+  const uniqueTasks = useMemo(() => {
+    const seen = new Set();
+    const unique = [];
+    tasks.forEach(item => {
+      if (item.id && !seen.has(item.id)) {
+        seen.add(item.id);
+        unique.push(item);
+      }
+    });
+    return unique;
+  }, [tasks]);
+
   // Auth State Listener and Firestore Data Syncer
   useEffect(() => {
     let active = true;
@@ -119,6 +132,7 @@ export const HabitsProvider = ({ children }) => {
     let unsubBadHabits = null;
     let unsubCompletions = null;
     let unsubReviews = null;
+    let unsubTasks = null;
 
     const cleanUpCloudListeners = () => {
       if (unsubProfile) unsubProfile();
@@ -127,6 +141,7 @@ export const HabitsProvider = ({ children }) => {
       if (unsubBadHabits) unsubBadHabits();
       if (unsubCompletions) unsubCompletions();
       if (unsubReviews) unsubReviews();
+      if (unsubTasks) unsubTasks();
 
       unsubProfile = null;
       unsubIdentities = null;
@@ -134,6 +149,7 @@ export const HabitsProvider = ({ children }) => {
       unsubBadHabits = null;
       unsubCompletions = null;
       unsubReviews = null;
+      unsubTasks = null;
     };
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -158,10 +174,11 @@ export const HabitsProvider = ({ children }) => {
         let profileLoaded = false;
         let identitiesLoaded = false;
         let habitsLoaded = false;
+        let tasksLoaded = false;
         let isFallbackActive = false;
 
         const checkLoadComplete = () => {
-          if (profileLoaded && identitiesLoaded && habitsLoaded) {
+          if (profileLoaded && identitiesLoaded && habitsLoaded && tasksLoaded) {
             setAuthLoading(false);
             setInitialSyncCompleted(true);
           }
@@ -218,6 +235,11 @@ export const HabitsProvider = ({ children }) => {
             unsubBadHabits = firestoreService.subscribeBadHabits(user.uid, setBadHabits, handleSyncError);
             unsubCompletions = firestoreService.subscribeCompletions(user.uid, setCompletions, handleSyncError);
             unsubReviews = firestoreService.subscribeWeeklyReviews(user.uid, setWeeklyReviews, handleSyncError);
+            unsubTasks = firestoreService.subscribeTasks(user.uid, (data) => {
+                setTasks(data);
+                tasksLoaded = true;
+                checkLoadComplete();
+            }, handleSyncError);
           })
           .catch(handleSyncError);
       } else {
@@ -230,6 +252,7 @@ export const HabitsProvider = ({ children }) => {
         setBadHabits([]);
         setCompletions([]);
         setWeeklyReviews([]);
+        setTasks([]);
         setAuthLoading(false);
         setInitialSyncCompleted(false);
       }
@@ -582,6 +605,118 @@ export const HabitsProvider = ({ children }) => {
     return await withTimeout(firestoreService.saveWeeklyReview(currentUser.uid, cleanReview));
   }, [currentUser]);
 
+  // --- Daily Tasks CRUD ---
+  const addTask = useCallback(async (title, dateNormalized) => {
+    if (!currentUser) throw new Error("User must be authenticated to create a task.");
+    return await withTimeout(firestoreService.saveTask(currentUser.uid, { title, dateNormalized }));
+  }, [currentUser]);
+
+  const updateTask = useCallback(async (id, fields) => {
+    if (!currentUser) return;
+    await withTimeout(firestoreService.updateTask(currentUser.uid, id, fields));
+  }, [currentUser]);
+
+  const deleteTask = useCallback(async (id) => {
+    if (!currentUser) return;
+    await withTimeout(firestoreService.deleteTask(currentUser.uid, id));
+  }, [currentUser]);
+
+  const toggleTask = useCallback(async (id, completed) => {
+    if (!currentUser) return;
+    const completedAt = completed ? new Date().toISOString() : null;
+    await withTimeout(firestoreService.updateTask(currentUser.uid, id, { completed, completedAt }));
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser && initialSyncCompleted && typeof currentUser.getIdToken === 'function') {
+      currentUser.getIdToken().then(token => {
+        window.postMessage({
+          type: "HABITS_APP_STATE",
+          payload: {
+            userId: currentUser.uid,
+            userProfile,
+            habits: uniqueHabits,
+            badHabits: uniqueBadHabits,
+            completions: uniqueCompletions,
+            tasks: uniqueTasks,
+            firebaseConfig: {
+              apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
+              authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "",
+              projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "",
+              storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "",
+              messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
+              appId: import.meta.env.VITE_FIREBASE_APP_ID || ""
+            },
+            authToken: token
+          }
+        }, window.location.origin);
+      }).catch(err => console.error("Error getting ID token:", err));
+    }
+  }, [currentUser, initialSyncCompleted, userProfile, uniqueHabits, uniqueBadHabits, uniqueCompletions, uniqueTasks]);
+
+  // Request pending offline actions from Chrome Extension on initialization
+  useEffect(() => {
+    if (initialSyncCompleted) {
+      window.postMessage({ type: "REQUEST_EXTENSION_SYNC" }, window.location.origin);
+    }
+  }, [initialSyncCompleted]);
+
+  // Handle commands sent from Chrome Extension popup/content script
+  useEffect(() => {
+    const handleExtensionMessage = async (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (!event.data || !event.data.type) return;
+
+      const { type, payload } = event.data;
+      
+      try {
+        if (type === "EXTENSION_SYNC_PENDING") {
+          const actions = payload;
+          for (const action of actions) {
+            const { type: actType, payload: actPayload } = action;
+            try {
+              if (actType === "EXTENSION_TOGGLE_HABIT") {
+                const { habitId, dateNormalized, isTwoMin, notes } = actPayload;
+                await toggleCompletion(habitId, dateNormalized, isTwoMin, notes);
+              } else if (actType === "EXTENSION_TOGGLE_TASK") {
+                const { taskId, completed } = actPayload;
+                await toggleTask(taskId, completed);
+              } else if (actType === "EXTENSION_ADD_TASK") {
+                const { title, dateNormalized, taskId } = actPayload;
+                const taskExists = uniqueTasks.some(t => t.id === taskId || t.title === title);
+                if (!taskExists && currentUser) {
+                  await firestoreService.saveTask(currentUser.uid, { id: taskId, title, dateNormalized });
+                }
+              } else if (actType === "EXTENSION_DELETE_TASK") {
+                const { taskId } = actPayload;
+                await deleteTask(taskId);
+              }
+            } catch (err) {
+              console.error("Failed to sync pending action:", action, err);
+            }
+          }
+        } else if (type === "EXTENSION_TOGGLE_HABIT") {
+          const { habitId, dateNormalized, isTwoMin, notes } = payload;
+          await toggleCompletion(habitId, dateNormalized, isTwoMin, notes);
+        } else if (type === "EXTENSION_TOGGLE_TASK") {
+          const { taskId, completed } = payload;
+          await toggleTask(taskId, completed);
+        } else if (type === "EXTENSION_ADD_TASK") {
+          const { title, dateNormalized } = payload;
+          await addTask(title, dateNormalized);
+        } else if (type === "EXTENSION_DELETE_TASK") {
+          const { taskId } = payload;
+          await deleteTask(taskId);
+        }
+      } catch (error) {
+        console.error("Error executing extension request:", error);
+      }
+    };
+
+    window.addEventListener("message", handleExtensionMessage);
+    return () => window.removeEventListener("message", handleExtensionMessage);
+  }, [toggleCompletion, toggleTask, addTask, deleteTask, uniqueCompletions, uniqueTasks, currentUser]);
+
   const contextValue = useMemo(() => ({
     currentUser,
     authLoading,
@@ -599,6 +734,7 @@ export const HabitsProvider = ({ children }) => {
     completions: uniqueCompletions,
     completionsIndex,
     weeklyReviews: uniqueWeeklyReviews,
+    tasks: uniqueTasks,
     selectedDate,
     setSelectedDate,
     addIdentity,
@@ -613,6 +749,10 @@ export const HabitsProvider = ({ children }) => {
     logRelapse,
     toggleCompletion,
     saveWeeklyReview,
+    addTask,
+    updateTask,
+    deleteTask,
+    toggleTask,
     getIdentityStrength,
     getDaysFree,
     getLevelProgress,
@@ -631,6 +771,7 @@ export const HabitsProvider = ({ children }) => {
     uniqueCompletions,
     completionsIndex,
     uniqueWeeklyReviews,
+    uniqueTasks,
     selectedDate,
     setSelectedDate,
     addIdentity,
@@ -645,6 +786,10 @@ export const HabitsProvider = ({ children }) => {
     logRelapse,
     toggleCompletion,
     saveWeeklyReview,
+    addTask,
+    updateTask,
+    deleteTask,
+    toggleTask,
     getIdentityStrength,
     getDaysFree,
     getLevelProgress,

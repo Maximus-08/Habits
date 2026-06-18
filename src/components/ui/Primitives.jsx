@@ -111,7 +111,7 @@ export const Tooltip = ({ content, children, className }) => {
             exit={{ opacity: 0, scale: 0.95, y: 5 }}
             transition={{ duration: 0.15 }}
             className={cn(
-              "absolute z-50 w-64 p-3 text-xs bg-text text-white rounded-lg shadow-lg -left-10 bottom-full mb-2 pointer-events-none leading-relaxed",
+              "absolute z-50 w-64 p-3 text-xs bg-text text-white rounded-lg shadow-lg -left-10 bottom-full mb-1 leading-relaxed",
               className
             )}
           >
